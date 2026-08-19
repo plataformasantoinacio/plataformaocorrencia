@@ -1,0 +1,14 @@
+{
+  "name": "Livro de Ocorrências — Colégio Santo Inácio",
+  "short_name": "Ocorrências CSI",
+  "description": "Plataforma interna para registro e acompanhamento de ocorrências disciplinares.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1a1f3a",
+  "theme_color": "#1a1f3a",
+  "icons": [
+    { "src": "/favicon.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/favicon.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/favicon.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
