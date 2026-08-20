@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react";
+import { useState, useEffect } from "react";
 import type { PerfilId } from "@/lib/auth";
 
 export type SegurancaUser = {
@@ -67,24 +67,33 @@ export function deleteUser(id: string) {
 }
 
 export function findUserByEmail(email: string): SegurancaUser | undefined {
+  // Garantir carregamento inicial no cliente se data estiver vazio
+  if (data.length === 0 && typeof window !== "undefined") {
+    data = load();
+  }
   return data.find((u) => u.email.toLowerCase() === email.toLowerCase());
 }
 
 export function emailExists(email: string, ignoreId?: string): boolean {
+  if (data.length === 0 && typeof window !== "undefined") {
+    data = load();
+  }
   return data.some(
     (u) => u.email.toLowerCase() === email.toLowerCase() && u.id !== ignoreId,
   );
 }
 
-function subscribe(cb: () => void) {
-  listeners.add(cb);
-  return () => listeners.delete(cb);
-}
-
-function getSnapshot() {
-  return data;
-}
-
 export function useUsers(): SegurancaUser[] {
-  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  const [users, setUsers] = useState<SegurancaUser[]>([]);
+
+  useEffect(() => {
+    setUsers(data);
+    const cb = () => setUsers(data);
+    listeners.add(cb);
+    return () => {
+      listeners.delete(cb);
+    };
+  }, []);
+
+  return users;
 }

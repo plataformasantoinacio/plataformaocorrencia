@@ -33,9 +33,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [novaOpen, setNovaOpen] = useState(false);
   const user = useCurrentUser();
 
-  // Guard: redireciona segurança para longe das áreas restritas
+  // Guard: redireciona não-autenticados para o login e segurança para longe das áreas restritas
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      if (location.pathname !== "/") {
+        navigate({ to: "/", replace: true });
+      }
+      return;
+    }
     if (
       user.perfilId === "seguranca" &&
       (location.pathname.startsWith("/dashboard") ||
