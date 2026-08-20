@@ -56,13 +56,14 @@ export function OcorrenciaDetailDialog({
   const all = useOcorrencias();
   const user = useCurrentUser();
   const [mensagem, setMensagem] = useState("");
+  const [isPendingMsg, startMsgTransition] = useTransition();
+
   if (!ocorrencia) return null;
+
   // Sempre usa a versão viva do store para refletir novas mensagens em tempo real.
   const o = all.find((x) => x.id === ocorrencia.id) ?? ocorrencia;
   const isSeguranca = user?.perfilId === "seguranca";
   const mensagens = o.mensagens ?? [];
-
-  const [isPendingMsg, startMsgTransition] = useTransition();
 
   const enviarMensagem = () => {
     const texto = mensagem.trim();
