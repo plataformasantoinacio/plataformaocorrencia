@@ -4,7 +4,6 @@
  * Usa Realtime do Supabase para atualizar em tempo real entre abas/usuários.
  */
 
-import { useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { queryClient } from "./query-client";
 import { supabase } from "./supabase";
@@ -19,36 +18,32 @@ import type { Ocorrencia, OcorrenciaMensagem } from "./mock-data";
 
 export const OCORRENCIAS_KEY = ["ocorrencias"] as const;
 
+// ─── Subscrição Realtime global (singleton) ──────────────────────────────────
+// Registra o canal Realtime uma única vez no cliente para invalidar o cache
+// sem recriar ou tentar re-inscrever um canal já ativo a cada renderização.
+if (typeof window !== "undefined") {
+  supabase
+    .channel("ocorrencias-realtime-global")
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "ocorrencias" },
+      () => {
+        void queryClient.invalidateQueries({ queryKey: OCORRENCIAS_KEY });
+      },
+    )
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "ocorrencia_mensagens" },
+      () => {
+        void queryClient.invalidateQueries({ queryKey: OCORRENCIAS_KEY });
+      },
+    )
+    .subscribe();
+}
+
 // ─── Hook principal ──────────────────────────────────────────────────────────
 
 export function useOcorrencias(): Ocorrencia[] {
-  const qc = useQueryClient();
-
-  // Subscrição Realtime do Supabase via useEffect para limpeza correta
-  useEffect(() => {
-    const channel = supabase
-      .channel("ocorrencias-realtime")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "ocorrencias" },
-        () => {
-          void qc.invalidateQueries({ queryKey: OCORRENCIAS_KEY });
-        },
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "ocorrencia_mensagens" },
-        () => {
-          void qc.invalidateQueries({ queryKey: OCORRENCIAS_KEY });
-        },
-      )
-      .subscribe();
-
-    return () => {
-      void supabase.removeChannel(channel);
-    };
-  }, [qc]);
-
   const { data } = useQuery({
     queryKey: OCORRENCIAS_KEY,
     queryFn: fetchOcorrencias,
