@@ -33,7 +33,7 @@ function LoginPage() {
     if (perfil === "direcao") {
       // 1) Credencial fixa da Direção principal
       if (
-        login.toLowerCase() === DIRECAO_EMAIL &&
+        login.toLowerCase() === DIRECAO_EMAIL.toLowerCase() &&
         senha === DIRECAO_SENHA
       ) {
         saveCurrentUser({
@@ -41,36 +41,61 @@ function LoginPage() {
           perfil: "Direção",
           perfilId: "direcao",
         });
+        toast.success("Login realizado com sucesso como Direção!");
         navigate({ to: "/dashboard" });
         return;
       }
-      // 2) Usuários de Direção criados pela plataforma
-      const found = findUserByEmail(login);
-      if (!found || found.senha !== senha || found.perfilId !== "direcao") {
-        return toast.error("Credenciais da Direção inválidas.");
-      }
-      saveCurrentUser({
-        nome: found.nome,
-        perfil: "Direção",
-        perfilId: "direcao",
-      });
-      navigate({ to: "/dashboard" });
-      return;
-    }
 
-    // Segurança: valida contra usuários cadastrados pela Direção.
-    const found = findUserByEmail(login);
-    if (!found || found.senha !== senha || found.perfilId !== "seguranca") {
-      return toast.error(
-        "Email ou senha incorretos. Solicite acesso à Direção.",
-      );
+      // 2) Usuários cadastrados da Direção
+      const found = findUserByEmail(login);
+      if (found) {
+        if (found.senha !== senha) {
+          return toast.error("Senha incorreta.");
+        }
+        if (found.perfilId !== "direcao") {
+          return toast.error("Este e-mail pertence ao perfil Segurança. Selecione a aba 'Segurança' para entrar.");
+        }
+        saveCurrentUser({
+          nome: found.nome,
+          perfil: "Direção",
+          perfilId: "direcao",
+        });
+        toast.success("Login realizado com sucesso como Direção!");
+        navigate({ to: "/dashboard" });
+        return;
+      }
+
+      return toast.error("Credenciais inválidas para o perfil Direção.");
+    } else {
+      // Perfil Segurança selecionado
+      if (
+        login.toLowerCase() === DIRECAO_EMAIL.toLowerCase() &&
+        senha === DIRECAO_SENHA
+      ) {
+        return toast.error("Este e-mail pertence ao perfil Direção. Selecione a aba 'Direção' para entrar.");
+      }
+
+      // Usuários cadastrados do perfil Segurança
+      const found = findUserByEmail(login);
+      if (found) {
+        if (found.senha !== senha) {
+          return toast.error("Senha incorreta.");
+        }
+        if (found.perfilId !== "seguranca") {
+          return toast.error("Este e-mail pertence ao perfil Direção. Selecione a aba 'Direção' para entrar.");
+        }
+        saveCurrentUser({
+          nome: found.nome,
+          perfil: "Segurança",
+          perfilId: "seguranca",
+        });
+        toast.success("Login realizado com sucesso como Segurança!");
+        navigate({ to: "/registrar" });
+        return;
+      }
+
+      return toast.error("Credenciais inválidas para o perfil Segurança.");
     }
-    saveCurrentUser({
-      nome: found.nome,
-      perfil: "Segurança",
-      perfilId: "seguranca",
-    });
-    navigate({ to: "/registrar" });
   };
 
 
