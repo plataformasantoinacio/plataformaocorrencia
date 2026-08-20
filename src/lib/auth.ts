@@ -12,6 +12,9 @@ const KEY = "csi_user";
 
 export function saveCurrentUser(u: CurrentUser) {
   localStorage.setItem(KEY, JSON.stringify(u));
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("csi_user_changed"));
+  }
 }
 
 export function readCurrentUser(): CurrentUser | null {
@@ -38,17 +41,31 @@ export function readCurrentUser(): CurrentUser | null {
 
 export function clearCurrentUser() {
   localStorage.removeItem(KEY);
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("csi_user_changed"));
+  }
 }
 
 export function useCurrentUser(): CurrentUser | null {
-  const [user, setUser] = useState<CurrentUser | null>(null);
+  const [user, setUser] = useState<CurrentUser | null>(() => {
+    if (typeof window !== "undefined") {
+      return readCurrentUser();
+    }
+    return null;
+  });
+
   useEffect(() => {
     setUser(readCurrentUser());
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === KEY) setUser(readCurrentUser());
+    const handleUpdate = () => {
+      setUser(readCurrentUser());
     };
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
+    window.addEventListener("storage", handleUpdate);
+    window.addEventListener("csi_user_changed", handleUpdate);
+    return () => {
+      window.removeEventListener("storage", handleUpdate);
+      window.removeEventListener("csi_user_changed", handleUpdate);
+    };
   }, []);
+
   return user;
 }
