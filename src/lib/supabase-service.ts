@@ -59,17 +59,22 @@ function mapMensagem(row: Record<string, unknown>): OcorrenciaMensagem {
 // ─── ALUNOS ──────────────────────────────────────────────────────────────────
 
 export async function fetchAlunos(): Promise<Aluno[]> {
-  const { data, error } = await supabase
-    .from("alunos")
-    .select("*")
-    .order("nome");
+  try {
+    const { data, error } = await supabase
+      .from("alunos")
+      .select("*")
+      .order("nome");
 
-  if (error) {
-    console.error("[Supabase] fetchAlunos:", error.message);
-    throw error;
+    if (error) {
+      console.error("[Supabase] fetchAlunos:", error.message);
+      return [];
+    }
+
+    return (data ?? []).map(mapAluno);
+  } catch (err) {
+    console.error("[Supabase] fetchAlunos crash:", err);
+    return [];
   }
-
-  return (data ?? []).map(mapAluno);
 }
 
 export async function upsertAluno(aluno: Aluno): Promise<void> {
@@ -97,17 +102,22 @@ export async function upsertAluno(aluno: Aluno): Promise<void> {
 // ─── OCORRÊNCIAS ─────────────────────────────────────────────────────────────
 
 export async function fetchOcorrencias(): Promise<Ocorrencia[]> {
-  const { data, error } = await supabase
-    .from("ocorrencias")
-    .select("*, ocorrencia_mensagens(*)")
-    .order("data", { ascending: false });
+  try {
+    const { data, error } = await supabase
+      .from("ocorrencias")
+      .select("*, ocorrencia_mensagens(*)")
+      .order("data", { ascending: false });
 
-  if (error) {
-    console.error("[Supabase] fetchOcorrencias:", error.message);
-    throw error;
+    if (error) {
+      console.error("[Supabase] fetchOcorrencias:", error.message);
+      return [];
+    }
+
+    return (data ?? []).map((row) => mapOcorrencia(row as Record<string, unknown>));
+  } catch (err) {
+    console.error("[Supabase] fetchOcorrencias crash:", err);
+    return [];
   }
-
-  return (data ?? []).map((row) => mapOcorrencia(row as Record<string, unknown>));
 }
 
 export async function insertOcorrencia(
