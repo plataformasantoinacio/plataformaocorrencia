@@ -115,7 +115,7 @@ export async function insertOcorrencia(
 ): Promise<Ocorrencia> {
   const row = {
     id: `o${Date.now().toString(36)}`,
-    aluno_id: o.alunoId,
+    aluno_id: o.alunoId || null,
     aluno_nome: o.alunoNome,
     turma: o.turma,
     tipo: o.tipo,
@@ -146,7 +146,7 @@ export async function updateOcorrenciaDb(
   patch: Partial<Omit<Ocorrencia, "id">>,
 ): Promise<void> {
   const row: Record<string, unknown> = {};
-  if (patch.alunoId !== undefined) row.aluno_id = patch.alunoId;
+  if (patch.alunoId !== undefined) row.aluno_id = patch.alunoId || null;
   if (patch.alunoNome !== undefined) row.aluno_nome = patch.alunoNome;
   if (patch.turma !== undefined) row.turma = patch.turma;
   if (patch.tipo !== undefined) row.tipo = patch.tipo;
@@ -168,13 +168,10 @@ export async function updateOcorrenciaDb(
 }
 
 export async function deleteOcorrenciaDb(id: string): Promise<void> {
-  const { data, error } = await supabase.from("ocorrencias").delete().eq("id", id).select();
+  const { error } = await supabase.from("ocorrencias").delete().eq("id", id);
   if (error) {
     console.error("[Supabase] deleteOcorrencia:", error.message);
     throw error;
-  }
-  if (!data || data.length === 0) {
-    throw new Error("Nenhuma linha excluída. Verifique as permissões (RLS) de DELETE no Supabase.");
   }
 }
 

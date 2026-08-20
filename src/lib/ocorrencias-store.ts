@@ -4,6 +4,7 @@
  * Usa Realtime do Supabase para atualizar em tempo real entre abas/usuários.
  */
 
+import { useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { queryClient } from "./query-client";
 import { supabase } from "./supabase";
@@ -23,35 +24,30 @@ export const OCORRENCIAS_KEY = ["ocorrencias"] as const;
 export function useOcorrencias(): Ocorrencia[] {
   const qc = useQueryClient();
 
-  // Subscrição Realtime do Supabase
-  useQuery({
-    queryKey: ["ocorrencias:realtime"],
-    queryFn: () => {
-      const channel = supabase
-        .channel("ocorrencias-realtime")
-        .on(
-          "postgres_changes",
-          { event: "*", schema: "public", table: "ocorrencias" },
-          () => {
-            void qc.invalidateQueries({ queryKey: OCORRENCIAS_KEY });
-          },
-        )
-        .on(
-          "postgres_changes",
-          { event: "*", schema: "public", table: "ocorrencia_mensagens" },
-          () => {
-            void qc.invalidateQueries({ queryKey: OCORRENCIAS_KEY });
-          },
-        )
-        .subscribe();
+  // Subscrição Realtime do Supabase via useEffect para limpeza correta
+  useEffect(() => {
+    const channel = supabase
+      .channel("ocorrencias-realtime")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "ocorrencias" },
+        () => {
+          void qc.invalidateQueries({ queryKey: OCORRENCIAS_KEY });
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "ocorrencia_mensagens" },
+        () => {
+          void qc.invalidateQueries({ queryKey: OCORRENCIAS_KEY });
+        },
+      )
+      .subscribe();
 
-      return () => {
-        void supabase.removeChannel(channel);
-      };
-    },
-    staleTime: Infinity,
-    gcTime: Infinity,
-  });
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [qc]);
 
   const { data } = useQuery({
     queryKey: OCORRENCIAS_KEY,
