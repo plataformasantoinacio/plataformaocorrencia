@@ -49,17 +49,34 @@ ALTER TABLE public.ocorrencias ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ocorrencia_mensagens ENABLE ROW LEVEL SECURITY;
 
 -- Políticas de acesso público/leitura e escrita (Ajuste conforme regras de Auth do projeto)
+DROP POLICY IF EXISTS "Permitir leitura pública de alunos" ON public.alunos;
 CREATE POLICY "Permitir leitura pública de alunos" ON public.alunos FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Permitir inserção/atualização de alunos" ON public.alunos;
 CREATE POLICY "Permitir inserção/atualização de alunos" ON public.alunos FOR ALL USING (true);
 
+DROP POLICY IF EXISTS "Permitir leitura pública de ocorrencias" ON public.ocorrencias;
 CREATE POLICY "Permitir leitura pública de ocorrencias" ON public.ocorrencias FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Permitir inserção de ocorrencias" ON public.ocorrencias;
 CREATE POLICY "Permitir inserção de ocorrencias" ON public.ocorrencias FOR INSERT WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Permitir atualização de ocorrencias" ON public.ocorrencias;
 CREATE POLICY "Permitir atualização de ocorrencias" ON public.ocorrencias FOR UPDATE USING (true);
+
+DROP POLICY IF EXISTS "Permitir exclusão de ocorrencias" ON public.ocorrencias;
 CREATE POLICY "Permitir exclusão de ocorrencias" ON public.ocorrencias FOR DELETE USING (true);
 
+DROP POLICY IF EXISTS "Permitir leitura pública de mensagens" ON public.ocorrencia_mensagens;
 CREATE POLICY "Permitir leitura pública de mensagens" ON public.ocorrencia_mensagens FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Permitir inserção de mensagens" ON public.ocorrencia_mensagens;
 CREATE POLICY "Permitir inserção de mensagens" ON public.ocorrencia_mensagens FOR INSERT WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Permitir atualização de mensagens" ON public.ocorrencia_mensagens;
 CREATE POLICY "Permitir atualização de mensagens" ON public.ocorrencia_mensagens FOR UPDATE USING (true);
+
+DROP POLICY IF EXISTS "Permitir exclusão de mensagens" ON public.ocorrencia_mensagens;
 CREATE POLICY "Permitir exclusão de mensagens" ON public.ocorrencia_mensagens FOR DELETE USING (true);
 
 -- Dados Iniciais (Seeds) de Alunos
