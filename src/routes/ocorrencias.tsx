@@ -48,26 +48,29 @@ function OcorrenciasList() {
   const [isPendingDelete, startDeleteTransition] = useTransition();
 
   const filtradas = useMemo(() => {
-    return ocorrencias
+    const list = Array.isArray(ocorrencias) ? ocorrencias : [];
+    return list
       .filter((o) => {
+        if (!o) return false;
         if (nivel !== "todos" && o.nivel !== nivel) return false;
         if (periodo !== "todos") {
           const dias = parseInt(periodo);
-          if (Date.now() - new Date(o.data).getTime() > dias * 86400000) return false;
+          const time = new Date(o.data).getTime();
+          if (isNaN(time) || Date.now() - time > dias * 86400000) return false;
         }
         if (busca.trim()) {
           const q = busca.toLowerCase();
           return (
-            o.alunoNome.toLowerCase().includes(q) ||
-            o.tipo.toLowerCase().includes(q) ||
-            o.turma.toLowerCase().includes(q) ||
-            o.local.toLowerCase().includes(q)
+            (o.alunoNome || "").toLowerCase().includes(q) ||
+            (o.tipo || "").toLowerCase().includes(q) ||
+            (o.turma || "").toLowerCase().includes(q) ||
+            (o.local || "").toLowerCase().includes(q)
           );
         }
         return true;
       })
       .sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime());
-  }, [busca, nivel, periodo]);
+  }, [ocorrencias, busca, nivel, periodo]);
 
   return (
     <AppShell>

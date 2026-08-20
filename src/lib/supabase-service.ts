@@ -31,17 +31,17 @@ function mapOcorrencia(row: Record<string, unknown>): Ocorrencia {
     : undefined;
 
   return {
-    id: row.id as string,
-    alunoId: row.aluno_id as string,
-    alunoNome: row.aluno_nome as string,
-    turma: row.turma as string,
-    tipo: row.tipo as string,
-    subtipo: (row.subtipo as string) ?? undefined,
-    data: row.data as string,
-    local: row.local as string,
-    relato: row.relato as string,
-    nivel: row.nivel as Ocorrencia["nivel"],
-    registradoPor: row.registrado_por as string,
+    id: String(row.id ?? ""),
+    alunoId: String(row.aluno_id ?? ""),
+    alunoNome: String(row.aluno_nome ?? "Aluno sem nome"),
+    turma: String(row.turma ?? ""),
+    tipo: String(row.tipo ?? "Outros"),
+    subtipo: row.subtipo ? String(row.subtipo) : undefined,
+    data: String(row.data ?? new Date().toISOString()),
+    local: String(row.local ?? ""),
+    relato: String(row.relato ?? ""),
+    nivel: (row.nivel as Ocorrencia["nivel"]) || "leve",
+    registradoPor: String(row.registrado_por ?? "Sistema"),
     mensagens,
   };
 }

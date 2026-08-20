@@ -30,20 +30,26 @@ function Dashboard() {
   const [selecionada, setSelecionada] = useState<Ocorrencia | null>(null);
   const [showRecentes, setShowRecentes] = useState(false);
   const [showRecorrentes, setShowRecorrentes] = useState(false);
-  const ocorrencias = useOcorrencias();
+  const rawOcorrencias = useOcorrencias();
+  const ocorrencias = Array.isArray(rawOcorrencias) ? rawOcorrencias : [];
   const total = ocorrencias.length;
-  const graves = ocorrencias.filter((o) => o.nivel === "grave").length;
-  const semana = ocorrencias.filter(
-    (o) => Date.now() - new Date(o.data).getTime() < 7 * 86400000,
-  ).length;
+  const graves = ocorrencias.filter((o) => o && o.nivel === "grave").length;
+  const semana = ocorrencias.filter((o) => {
+    if (!o || !o.data) return false;
+    const time = new Date(o.data).getTime();
+    return !isNaN(time) && Date.now() - time < 7 * 86400000;
+  }).length;
 
   // Recorrência: mesma pessoa (nome + turma/posto), 2+ ocorrências
   const counts = ocorrencias.reduce<
     Record<string, { nome: string; turma: string; count: number }>
   >((acc, o) => {
-    const turma = (o.turma ?? "").trim();
-    const key = `${o.alunoNome.trim().toLowerCase()}|${turma.toLowerCase()}`;
-    if (!acc[key]) acc[key] = { nome: o.alunoNome, turma, count: 0 };
+    if (!o) return acc;
+    const nome = (o.alunoNome || "").trim();
+    const turma = (o.turma || "").trim();
+    if (!nome) return acc;
+    const key = `${nome.toLowerCase()}|${turma.toLowerCase()}`;
+    if (!acc[key]) acc[key] = { nome, turma, count: 0 };
     acc[key].count += 1;
     return acc;
   }, {});
@@ -52,6 +58,7 @@ function Dashboard() {
     .sort((a, b) => b.count - a.count);
 
   const recentes = [...ocorrencias]
+    .filter((o) => o && o.data)
     .sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime())
     .slice(0, 5);
 
