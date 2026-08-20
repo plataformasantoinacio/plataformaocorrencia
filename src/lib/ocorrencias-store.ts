@@ -1,90 +1,163 @@
-import { useSyncExternalStore } from "react";
-import { ocorrencias as seed, type Ocorrencia, type OcorrenciaMensagem } from "./mock-data";
+/**
+ * ocorrencias-store.ts
+ * Store de ocorrências integrado ao Supabase via React Query.
+ * Usa Realtime do Supabase para atualizar em tempo real entre abas/usuários.
+ */
 
-const STORAGE_KEY = "ocorrencias:v1";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { queryClient } from "./query-client";
+import { supabase } from "./supabase";
+import {
+  fetchOcorrencias,
+  insertOcorrencia,
+  updateOcorrenciaDb,
+  deleteOcorrenciaDb,
+  insertMensagem,
+} from "./supabase-service";
+import type { Ocorrencia, OcorrenciaMensagem } from "./mock-data";
 
-function loadInitial(): Ocorrencia[] {
-  if (typeof window === "undefined") return [...seed];
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw) as Ocorrencia[];
-  } catch {
-    // ignore
-  }
-  return [...seed];
+export const OCORRENCIAS_KEY = ["ocorrencias"] as const;
+
+// ─── Hook principal ──────────────────────────────────────────────────────────
+
+export function useOcorrencias(): Ocorrencia[] {
+  const qc = useQueryClient();
+
+  // Subscrição Realtime do Supabase
+  useQuery({
+    queryKey: ["ocorrencias:realtime"],
+    queryFn: () => {
+      const channel = supabase
+        .channel("ocorrencias-realtime")
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "ocorrencias" },
+          () => {
+            void qc.invalidateQueries({ queryKey: OCORRENCIAS_KEY });
+          },
+        )
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "ocorrencia_mensagens" },
+          () => {
+            void qc.invalidateQueries({ queryKey: OCORRENCIAS_KEY });
+          },
+        )
+        .subscribe();
+
+      return () => {
+        void supabase.removeChannel(channel);
+      };
+    },
+    staleTime: Infinity,
+    gcTime: Infinity,
+  });
+
+  const { data } = useQuery({
+    queryKey: OCORRENCIAS_KEY,
+    queryFn: fetchOcorrencias,
+    staleTime: 30_000,
+  });
+
+  return data ?? [];
 }
 
-let data: Ocorrencia[] = loadInitial();
-const listeners = new Set<() => void>();
+// ─── Mutation hooks ──────────────────────────────────────────────────────────
 
-function persist() {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-  } catch {
-    // ignore
-  }
-}
-
-function emit() {
-  persist();
-  listeners.forEach((l) => l());
-}
-
-if (typeof window !== "undefined") {
-  window.addEventListener("storage", (e) => {
-    if (e.key !== STORAGE_KEY) return;
-    try {
-      data = e.newValue ? (JSON.parse(e.newValue) as Ocorrencia[]) : [];
-    } catch {
-      return;
-    }
-    listeners.forEach((l) => l());
+export function useAddOcorrencia() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (o: Omit<Ocorrencia, "id" | "data"> & { data?: string }) =>
+      insertOcorrencia(o),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: OCORRENCIAS_KEY });
+    },
   });
 }
 
-export function addOcorrencia(o: Omit<Ocorrencia, "id" | "data"> & { data?: string }): Ocorrencia {
-  const nova: Ocorrencia = {
-    ...o,
-    id: `o${Date.now().toString(36)}`,
-    data: o.data ?? new Date().toISOString(),
-  };
-  data = [nova, ...data];
-  emit();
-  return nova;
+export function useUpdateOcorrencia() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      patch,
+    }: {
+      id: string;
+      patch: Partial<Omit<Ocorrencia, "id">>;
+    }) => updateOcorrenciaDb(id, patch),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: OCORRENCIAS_KEY });
+    },
+  });
 }
 
-export function updateOcorrencia(id: string, patch: Partial<Omit<Ocorrencia, "id">>) {
-  data = data.map((o) => (o.id === id ? { ...o, ...patch } : o));
-  emit();
+export function useDeleteOcorrencia() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => deleteOcorrenciaDb(id),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: OCORRENCIAS_KEY });
+    },
+  });
 }
 
-export function deleteOcorrencia(id: string) {
-  data = data.filter((o) => o.id !== id);
-  emit();
+export function useAddMensagem() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      ocorrenciaId,
+      msg,
+    }: {
+      ocorrenciaId: string;
+      msg: Omit<OcorrenciaMensagem, "id" | "data">;
+    }) => insertMensagem(ocorrenciaId, msg),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: OCORRENCIAS_KEY });
+    },
+  });
 }
 
-export function addMensagem(id: string, mensagem: Omit<OcorrenciaMensagem, "id" | "data">) {
-  const m: OcorrenciaMensagem = {
-    ...mensagem,
-    id: `m${Date.now().toString(36)}`,
-    data: new Date().toISOString(),
-  };
-  data = data.map((o) =>
-    o.id === id ? { ...o, mensagens: [...(o.mensagens ?? []), m] } : o,
+// ─── Funções imperativas ──────────────────────────────────────────────────────
+// Usam o queryClient singleton para invalidar o cache após cada operação,
+// mesmo sendo chamadas fora de componentes React.
+
+export async function addOcorrencia(
+  o: Omit<Ocorrencia, "id" | "data"> & { data?: string },
+): Promise<Ocorrencia> {
+  const result = await insertOcorrencia(o);
+  await queryClient.invalidateQueries({ queryKey: OCORRENCIAS_KEY });
+  return result;
+}
+
+export async function updateOcorrencia(
+  id: string,
+  patch: Partial<Omit<Ocorrencia, "id">>,
+): Promise<void> {
+  await updateOcorrenciaDb(id, patch);
+  await queryClient.invalidateQueries({ queryKey: OCORRENCIAS_KEY });
+}
+
+export async function deleteOcorrencia(id: string): Promise<void> {
+  // Optimistic update: remove do cache IMEDIATAMENTE
+  const previous = queryClient.getQueryData<Ocorrencia[]>(OCORRENCIAS_KEY);
+  queryClient.setQueryData<Ocorrencia[]>(
+    OCORRENCIAS_KEY,
+    (old) => (old ?? []).filter((o) => o.id !== id),
   );
-  emit();
+
+  try {
+    await deleteOcorrenciaDb(id);
+  } catch (err) {
+    // Falhou → reverte o cache para o estado anterior
+    queryClient.setQueryData(OCORRENCIAS_KEY, previous);
+    throw err;
+  }
 }
 
-function subscribe(cb: () => void) {
-  listeners.add(cb);
-  return () => listeners.delete(cb);
-}
-
-function getSnapshot() {
-  return data;
-}
-
-export function useOcorrencias(): Ocorrencia[] {
-  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+export async function addMensagem(
+  id: string,
+  mensagem: Omit<OcorrenciaMensagem, "id" | "data">,
+): Promise<void> {
+  await insertMensagem(id, mensagem);
+  await queryClient.invalidateQueries({ queryKey: OCORRENCIAS_KEY });
 }

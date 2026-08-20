@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useTransition } from "react";
 import {
   Dialog,
   DialogContent,
@@ -83,6 +83,8 @@ export function NovaOcorrenciaDialog({
   const tipoIsOutros = tipo === "Outros";
   const localIsOutro = local === "Outro";
 
+  const [isPending, startTransition] = useTransition();
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const tipoFinal = tipoIsOutros ? tipoOutro.trim() : tipo;
@@ -100,32 +102,39 @@ export function NovaOcorrenciaDialog({
     const currentUser = readCurrentUser();
     const registradoPor =
       ocorrencia?.registradoPor ?? currentUser?.nome ?? "Segurança";
-    if (isEdit && ocorrencia) {
-      updateOcorrencia(ocorrencia.id, {
-        alunoNome: nome.trim(),
-        turma: turma.trim(),
-        tipo: tipoFinal,
-        subtipo: subtipo.trim() || undefined,
-        local: localFinal,
-        relato: relato.trim(),
-        nivel,
-      });
-      toast.success("Ocorrência atualizada.");
-    } else {
-      addOcorrencia({
-        alunoId: "",
-        alunoNome: nome.trim(),
-        turma: turma.trim(),
-        tipo: tipoFinal,
-        subtipo: subtipo.trim() || undefined,
-        local: localFinal,
-        relato: relato.trim(),
-        nivel,
-        registradoPor,
-      });
-      toast.success("Ocorrência registrada com sucesso!");
-    }
-    onOpenChange(false);
+
+    startTransition(async () => {
+      try {
+        if (isEdit && ocorrencia) {
+          await updateOcorrencia(ocorrencia.id, {
+            alunoNome: nome.trim(),
+            turma: turma.trim(),
+            tipo: tipoFinal,
+            subtipo: subtipo.trim() || undefined,
+            local: localFinal,
+            relato: relato.trim(),
+            nivel,
+          });
+          toast.success("Ocorrência atualizada.");
+        } else {
+          await addOcorrencia({
+            alunoId: "",
+            alunoNome: nome.trim(),
+            turma: turma.trim(),
+            tipo: tipoFinal,
+            subtipo: subtipo.trim() || undefined,
+            local: localFinal,
+            relato: relato.trim(),
+            nivel,
+            registradoPor,
+          });
+          toast.success("Ocorrência registrada com sucesso!");
+        }
+        onOpenChange(false);
+      } catch {
+        toast.error("Erro ao salvar. Verifique sua conexão e tente novamente.");
+      }
+    });
   };
 
   return (
@@ -281,9 +290,9 @@ export function NovaOcorrenciaDialog({
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancelar
             </Button>
-            <Button type="submit">
+            <Button type="submit" disabled={isPending}>
               <Save className="h-4 w-4" />
-              {isEdit ? "Salvar alterações" : "Registrar"}
+              {isPending ? "Salvando..." : isEdit ? "Salvar alterações" : "Registrar"}
             </Button>
           </DialogFooter>
         </form>

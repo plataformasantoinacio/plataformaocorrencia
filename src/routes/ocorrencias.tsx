@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { AppShell } from "@/components/AppShell";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -45,6 +45,7 @@ function OcorrenciasList() {
   const [novaOpen, setNovaOpen] = useState(false);
   const [editando, setEditando] = useState<Ocorrencia | null>(null);
   const [excluir, setExcluir] = useState<Ocorrencia | null>(null);
+  const [isPendingDelete, startDeleteTransition] = useTransition();
 
   const filtradas = useMemo(() => {
     return ocorrencias
@@ -255,10 +256,17 @@ function OcorrenciasList() {
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={() => {
                 if (excluir) {
-                  deleteOcorrencia(excluir.id);
-                  toast.success("Ocorrência excluída.");
+                  const id = excluir.id;
+                  setExcluir(null);
+                  startDeleteTransition(async () => {
+                    try {
+                      await deleteOcorrencia(id);
+                      toast.success("Ocorrência excluída.");
+                    } catch {
+                      toast.error("Erro ao excluir. Tente novamente.");
+                    }
+                  });
                 }
-                setExcluir(null);
               }}
             >
               Excluir

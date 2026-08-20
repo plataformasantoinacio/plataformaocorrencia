@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import {
   Dialog,
   DialogContent,
@@ -62,12 +62,20 @@ export function OcorrenciaDetailDialog({
   const isSeguranca = user?.perfilId === "seguranca";
   const mensagens = o.mensagens ?? [];
 
+  const [isPendingMsg, startMsgTransition] = useTransition();
+
   const enviarMensagem = () => {
     const texto = mensagem.trim();
     if (!texto) return;
-    addMensagem(o.id, { texto, de: user?.nome ?? "Segurança" });
-    setMensagem("");
-    toast.success("Mensagem enviada à Direção.");
+    startMsgTransition(async () => {
+      try {
+        await addMensagem(o.id, { texto, de: user?.nome ?? "Segurança" });
+        setMensagem("");
+        toast.success("Mensagem enviada à Direção.");
+      } catch {
+        toast.error("Erro ao enviar mensagem. Tente novamente.");
+      }
+    });
   };
 
   const handleDownload = async () => {
@@ -256,10 +264,10 @@ export function OcorrenciaDetailDialog({
                   size="sm"
                   className="w-full sm:w-auto"
                   onClick={enviarMensagem}
-                  disabled={!mensagem.trim()}
+                  disabled={!mensagem.trim() || isPendingMsg}
                 >
                   <Send className="h-3.5 w-3.5" />
-                  Enviar à Direção
+                  {isPendingMsg ? "Enviando..." : "Enviar à Direção"}
                 </Button>
               </div>
             )}

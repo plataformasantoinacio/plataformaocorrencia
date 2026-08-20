@@ -1,6 +1,7 @@
 import { Outlet, Link, createRootRoute, HeadContent, Scripts } from "@tanstack/react-router";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/sonner";
-
+import { queryClient } from "@/lib/query-client";
 import appCss from "../styles.css?url";
 
 function NotFoundComponent() {
@@ -90,9 +91,9 @@ function RootShell({ children }: { children: React.ReactNode }) {
 
 function RootComponent() {
   return (
-    <>
+    <QueryClientProvider client={queryClient}>
       <Outlet />
       <Toaster richColors position="top-right" />
-    </>
+    </QueryClientProvider>
   );
 }
