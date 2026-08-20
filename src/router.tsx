@@ -3,6 +3,7 @@ import { routeTree } from "./routeTree.gen";
 
 function DefaultErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   const router = useRouter();
+  console.error("[Router Error]", error);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
@@ -27,9 +28,10 @@ function DefaultErrorComponent({ error, reset }: { error: Error; reset: () => vo
         <p className="mt-2 text-sm text-muted-foreground">
           An unexpected error occurred. Please try again.
         </p>
-        {import.meta.env.DEV && error.message && (
-          <pre className="mt-4 max-h-40 overflow-auto rounded-md bg-muted p-3 text-left font-mono text-xs text-destructive">
-            {error.message}
+        {error?.message && (
+          <pre className="mt-4 max-h-60 overflow-auto rounded-md bg-muted p-3 text-left font-mono text-xs text-destructive border border-destructive/20 whitespace-pre-wrap">
+            {error.name}: {error.message}
+            {error.stack && `\n\n${error.stack}`}
           </pre>
         )}
         <div className="mt-6 flex items-center justify-center gap-3">
