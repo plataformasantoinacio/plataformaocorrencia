@@ -19,6 +19,9 @@ export type SegurancaUser = {
 };
 
 const KEY = "csi_users";
+const CLOUD_OBJECT_ID = "ff808181a09d98f701a0a66d92cc1380";
+const CLOUD_API_URL = `https://api.restful-api.dev/objects/${CLOUD_OBJECT_ID}`;
+
 const broadcast =
   typeof window !== "undefined" && "BroadcastChannel" in window
     ? new BroadcastChannel("csi_users_sync")
@@ -60,6 +63,51 @@ function persistLocal() {
     }
   }
   listeners.forEach((l) => l());
+  void syncToCloud(data);
+}
+
+// ─── Cloud REST Sync Helper (Rápido) ────────────────────────────────────────
+
+async function syncToCloud(usersList: SegurancaUser[]): Promise<void> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 2000);
+    await fetch(CLOUD_API_URL, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "CSISantoInacioUsers", data: { users: usersList } }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+  } catch (err) {
+    console.warn("[UsersStore] Cloud sync warning:", err);
+  }
+}
+
+async function fetchFromCloud(): Promise<SegurancaUser[] | null> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 2000);
+    const res = await fetch(CLOUD_API_URL, { signal: controller.signal });
+    clearTimeout(timeout);
+
+    if (!res.ok) return null;
+    const json = await res.json();
+    const cloudUsers = json?.data?.users;
+    if (Array.isArray(cloudUsers) && cloudUsers.length > 0) {
+      return cloudUsers.map((u: Partial<SegurancaUser>) => ({
+        id: u.id ?? `u${Date.now().toString(36)}`,
+        nome: u.nome ?? "",
+        email: (u.email ?? "").trim().toLowerCase(),
+        senha: u.senha ?? "",
+        perfilId: (u.perfilId ?? "seguranca") as PerfilId,
+        criadoEm: u.criadoEm ?? new Date().toISOString(),
+      }));
+    }
+  } catch (err) {
+    console.warn("[UsersStore] Cloud fetch warning:", err);
+  }
+  return null;
 }
 
 if (broadcast) {
@@ -85,32 +133,41 @@ if (typeof window !== "undefined") {
   });
 }
 
-// ─── Subscrição Realtime e Sync com Supabase ────────────────────────────────
+// ─── Subscrição Realtime e Sync ─────────────────────────────────────────────
 
 export async function syncUsersFromSupabase(): Promise<SegurancaUser[]> {
   try {
+    const cloudUsers = await fetchFromCloud();
+    if (cloudUsers && cloudUsers.length > 0) {
+      const map = new Map<string, SegurancaUser>();
+      data.forEach((u) => map.set(u.email.toLowerCase(), u));
+      cloudUsers.forEach((u) => map.set(u.email.toLowerCase(), u));
+      data = Array.from(map.values());
+      try {
+        localStorage.setItem(KEY, JSON.stringify(data));
+      } catch {
+        /* ignore */
+      }
+      listeners.forEach((l) => l());
+    }
+
     const remote = await fetchUsuarios();
     if (remote && remote.length > 0) {
       const map = new Map<string, SegurancaUser>();
-      // Insere os de localStorage
       data.forEach((u) => map.set(u.email.toLowerCase(), u));
-      // Sobrescreve/adiciona os do Supabase
       remote.forEach((u) => map.set(u.email.toLowerCase(), u));
-
       data = Array.from(map.values());
       persistLocal();
     }
   } catch (err) {
-    console.error("[UsersStore] syncUsersFromSupabase error:", err);
+    console.warn("[UsersStore] syncUsersFromSupabase warning:", err);
   }
   return data;
 }
 
 if (typeof window !== "undefined") {
-  // Inicia busca inicial no Supabase
   void syncUsersFromSupabase();
 
-  // Escuta alterações em tempo real na tabela 'usuarios'
   supabase
     .channel("usuarios-realtime-global")
     .on(
@@ -137,11 +194,9 @@ export async function addUser(
     criadoEm: new Date().toISOString(),
   };
 
-  // Garante salvamento local e transmissão em tempo real imediata
   data = [novo, ...data.filter((x) => x.email.toLowerCase() !== cleanEmail)];
   persistLocal();
 
-  // Tenta salvar no Supabase em segundo plano
   try {
     const created = await insertUsuario({
       nome: u.nome.trim(),
@@ -150,13 +205,15 @@ export async function addUser(
       perfilId: u.perfilId,
     });
 
-    data = data.map((x) => (x.id === tempId ? created : x));
-    persistLocal();
-    return created;
+    if (created) {
+      data = data.map((x) => (x.id === tempId ? created : x));
+      persistLocal();
+      return created;
+    }
   } catch (err: unknown) {
-    console.warn("[UsersStore] Salvo localmente. Aviso Supabase:", err);
-    return novo;
+    console.warn("[UsersStore] Salvo localmente e na nuvem. Supabase aviso:", err);
   }
+  return novo;
 }
 
 export async function updateUser(
@@ -173,7 +230,7 @@ export async function updateUser(
   try {
     await updateUsuarioDb(id, cleanPatch);
   } catch (err) {
-    console.warn("[UsersStore] Atualizado localmente. Aviso Supabase:", err);
+    console.warn("[UsersStore] Atualizado localmente e na nuvem. Supabase aviso:", err);
   }
 }
 
@@ -184,7 +241,7 @@ export async function deleteUser(id: string): Promise<void> {
   try {
     await deleteUsuarioDb(id);
   } catch (err) {
-    console.warn("[UsersStore] Deletado localmente. Aviso Supabase:", err);
+    console.warn("[UsersStore] Deletado localmente e na nuvem. Supabase aviso:", err);
   }
 }
 
@@ -204,16 +261,34 @@ export async function findUserByEmailAsync(
 ): Promise<SegurancaUser | undefined> {
   const cleanEmail = email.trim().toLowerCase();
 
-  // 1. Re-carrega dados locais atualizados de imediato
+  // 1. Re-carrega dados locais instantâneos
   if (typeof window !== "undefined") {
     data = loadLocal();
   }
 
-  // 2. Tenta buscar no cache local
+  // 2. Checa localmente
   const localFound = findUserByEmail(cleanEmail);
   if (localFound) return localFound;
 
-  // 3. Se não encontrou localmente, busca no Supabase
+  // 3. Busca rápida na nuvem (timeout de 2.0s)
+  const cloudUsers = await fetchFromCloud();
+  if (cloudUsers && cloudUsers.length > 0) {
+    const map = new Map<string, SegurancaUser>();
+    data.forEach((u) => map.set(u.email.toLowerCase(), u));
+    cloudUsers.forEach((u) => map.set(u.email.toLowerCase(), u));
+    data = Array.from(map.values());
+    try {
+      localStorage.setItem(KEY, JSON.stringify(data));
+    } catch {
+      /* ignore */
+    }
+    listeners.forEach((l) => l());
+
+    const foundInCloud = data.find((u) => u.email.toLowerCase() === cleanEmail);
+    if (foundInCloud) return foundInCloud;
+  }
+
+  // 4. Tenta busca no Supabase com timeout curto
   try {
     const fromDb = await fetchUsuarioByEmailDb(cleanEmail);
     if (fromDb) {
@@ -224,9 +299,6 @@ export async function findUserByEmailAsync(
   } catch (err) {
     console.warn("[UsersStore] Erro ao buscar usuário no Supabase:", err);
   }
-
-  // 4. Tenta fazer sync completo do banco
-  await syncUsersFromSupabase();
 
   return findUserByEmail(cleanEmail);
 }

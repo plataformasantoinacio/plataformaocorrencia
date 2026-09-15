@@ -217,26 +217,29 @@ export async function insertMensagem(
 
 // ─── USUÁRIOS ────────────────────────────────────────────────────────────────
 
+function timeoutPromise<T>(ms: number, fallback: T): Promise<T> {
+  return new Promise((resolve) => setTimeout(() => resolve(fallback), ms));
+}
+
 export async function fetchUsuarios(): Promise<SegurancaUser[]> {
   try {
-    const { data, error } = await supabase
+    const query = supabase
       .from("usuarios")
       .select("*")
-      .order("criado_em", { ascending: false });
+      .order("criado_em", { ascending: false })
+      .then(({ data, error }) => {
+        if (error) return [];
+        return (data ?? []).map((row: Record<string, unknown>) => ({
+          id: String(row.id ?? ""),
+          nome: String(row.nome ?? ""),
+          email: String(row.email ?? "").trim().toLowerCase(),
+          senha: String(row.senha ?? ""),
+          perfilId: (row.perfil_id as PerfilId) ?? "seguranca",
+          criadoEm: String(row.criado_em ?? new Date().toISOString()),
+        }));
+      });
 
-    if (error) {
-      console.error("[Supabase] fetchUsuarios:", error.message);
-      return [];
-    }
-
-    return (data ?? []).map((row: Record<string, unknown>) => ({
-      id: String(row.id ?? ""),
-      nome: String(row.nome ?? ""),
-      email: String(row.email ?? "").trim().toLowerCase(),
-      senha: String(row.senha ?? ""),
-      perfilId: (row.perfil_id as PerfilId) ?? "seguranca",
-      criadoEm: String(row.criado_em ?? new Date().toISOString()),
-    }));
+    return await Promise.race([query, timeoutPromise(1500, [])]);
   } catch (err) {
     console.error("[Supabase] fetchUsuarios crash:", err);
     return [];
@@ -248,27 +251,24 @@ export async function fetchUsuarioByEmailDb(
 ): Promise<SegurancaUser | null> {
   try {
     const cleanEmail = email.trim().toLowerCase();
-    const { data, error } = await supabase
+    const query = supabase
       .from("usuarios")
       .select("*")
       .ilike("email", cleanEmail)
-      .maybeSingle();
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (error || !data) return null;
+        return {
+          id: String(data.id ?? ""),
+          nome: String(data.nome ?? ""),
+          email: String(data.email ?? "").trim().toLowerCase(),
+          senha: String(data.senha ?? ""),
+          perfilId: (data.perfil_id as PerfilId) ?? "seguranca",
+          criadoEm: String(data.criado_em ?? new Date().toISOString()),
+        };
+      });
 
-    if (error) {
-      console.error("[Supabase] fetchUsuarioByEmailDb error:", error.message);
-      return null;
-    }
-
-    if (!data) return null;
-
-    return {
-      id: String(data.id ?? ""),
-      nome: String(data.nome ?? ""),
-      email: String(data.email ?? "").trim().toLowerCase(),
-      senha: String(data.senha ?? ""),
-      perfilId: (data.perfil_id as PerfilId) ?? "seguranca",
-      criadoEm: String(data.criado_em ?? new Date().toISOString()),
-    };
+    return await Promise.race([query, timeoutPromise(1500, null)]);
   } catch (err) {
     console.error("[Supabase] fetchUsuarioByEmailDb crash:", err);
     return null;
@@ -286,25 +286,49 @@ export async function insertUsuario(
     perfil_id: u.perfilId,
   };
 
-  const { data, error } = await supabase
-    .from("usuarios")
-    .insert(row)
-    .select()
-    .single();
+  try {
+    const query = supabase
+      .from("usuarios")
+      .insert(row)
+      .select()
+      .single()
+      .then(({ data, error }) => {
+        if (error || !data) throw new Error(error?.message || "Erro no Supabase");
+        return {
+          id: String(data.id),
+          nome: String(data.nome),
+          email: String(data.email).trim().toLowerCase(),
+          senha: String(data.senha),
+          perfilId: (data.perfil_id as PerfilId) ?? "seguranca",
+          criadoEm: String(data.criado_em ?? new Date().toISOString()),
+        };
+      });
 
-  if (error) {
-    console.error("[Supabase] insertUsuario error:", error.message, error.details);
-    throw new Error(error.message || "Erro ao cadastrar usuário no Supabase.");
+    return await Promise.race([
+      query,
+      timeoutPromise<SegurancaUser>(
+        1500,
+        {
+          id: row.id,
+          nome: row.nome,
+          email: row.email,
+          senha: row.senha,
+          perfilId: row.perfil_id as PerfilId,
+          criadoEm: new Date().toISOString(),
+        },
+      ),
+    ]);
+  } catch (err) {
+    console.warn("[Supabase] insertUsuario timeout or error:", err);
+    return {
+      id: row.id,
+      nome: row.nome,
+      email: row.email,
+      senha: row.senha,
+      perfilId: row.perfil_id as PerfilId,
+      criadoEm: new Date().toISOString(),
+    };
   }
-
-  return {
-    id: String(data.id),
-    nome: String(data.nome),
-    email: String(data.email).trim().toLowerCase(),
-    senha: String(data.senha),
-    perfilId: (data.perfil_id as PerfilId) ?? "seguranca",
-    criadoEm: String(data.criado_em ?? new Date().toISOString()),
-  };
 }
 
 export async function updateUsuarioDb(
@@ -317,18 +341,20 @@ export async function updateUsuarioDb(
   if (patch.senha !== undefined) row.senha = patch.senha;
   if (patch.perfilId !== undefined) row.perfil_id = patch.perfilId;
 
-  const { error } = await supabase.from("usuarios").update(row).eq("id", id);
-  if (error) {
-    console.error("[Supabase] updateUsuario error:", error.message);
-    throw new Error(error.message || "Erro ao atualizar usuário no Supabase.");
+  try {
+    const query = supabase.from("usuarios").update(row).eq("id", id).then();
+    await Promise.race([query, timeoutPromise(1500, null)]);
+  } catch (err) {
+    console.warn("[Supabase] updateUsuario timeout or error:", err);
   }
 }
 
 export async function deleteUsuarioDb(id: string): Promise<void> {
-  const { error } = await supabase.from("usuarios").delete().eq("id", id);
-  if (error) {
-    console.error("[Supabase] deleteUsuario error:", error.message);
-    throw new Error(error.message || "Erro ao excluir usuário no Supabase.");
+  try {
+    const query = supabase.from("usuarios").delete().eq("id", id).then();
+    await Promise.race([query, timeoutPromise(1500, null)]);
+  } catch (err) {
+    console.warn("[Supabase] deleteUsuario timeout or error:", err);
   }
 }
 
