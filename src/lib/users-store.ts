@@ -19,6 +19,10 @@ export type SegurancaUser = {
 };
 
 const KEY = "csi_users";
+const broadcast =
+  typeof window !== "undefined" && "BroadcastChannel" in window
+    ? new BroadcastChannel("csi_users_sync")
+    : null;
 
 function loadLocal(): SegurancaUser[] {
   if (typeof window === "undefined") return [];
@@ -48,7 +52,37 @@ function persistLocal() {
   } catch {
     /* ignore */
   }
+  if (broadcast) {
+    try {
+      broadcast.postMessage({ type: "CS_USERS_UPDATE", users: data });
+    } catch {
+      /* ignore */
+    }
+  }
   listeners.forEach((l) => l());
+}
+
+if (broadcast) {
+  broadcast.onmessage = (event) => {
+    if (event.data?.type === "CS_USERS_UPDATE" && Array.isArray(event.data.users)) {
+      data = event.data.users;
+      try {
+        localStorage.setItem(KEY, JSON.stringify(data));
+      } catch {
+        /* ignore */
+      }
+      listeners.forEach((l) => l());
+    }
+  };
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener("storage", (e) => {
+    if (e.key === KEY) {
+      data = loadLocal();
+      listeners.forEach((l) => l());
+    }
+  });
 }
 
 // ─── Subscrição Realtime e Sync com Supabase ────────────────────────────────
@@ -56,7 +90,7 @@ function persistLocal() {
 export async function syncUsersFromSupabase(): Promise<SegurancaUser[]> {
   try {
     const remote = await fetchUsuarios();
-    if (remote) {
+    if (remote && remote.length > 0) {
       const map = new Map<string, SegurancaUser>();
       // Insere os de localStorage
       data.forEach((u) => map.set(u.email.toLowerCase(), u));
@@ -103,7 +137,7 @@ export async function addUser(
     criadoEm: new Date().toISOString(),
   };
 
-  // Garante salvamento local imediato
+  // Garante salvamento local e transmissão em tempo real imediata
   data = [novo, ...data.filter((x) => x.email.toLowerCase() !== cleanEmail)];
   persistLocal();
 
@@ -156,8 +190,11 @@ export async function deleteUser(id: string): Promise<void> {
 
 export function findUserByEmail(email: string): SegurancaUser | undefined {
   const cleanEmail = email.trim().toLowerCase();
-  if (data.length === 0 && typeof window !== "undefined") {
-    data = loadLocal();
+  if (typeof window !== "undefined") {
+    const fresh = loadLocal();
+    if (fresh.length > 0) {
+      data = fresh;
+    }
   }
   return data.find((u) => u.email.toLowerCase() === cleanEmail);
 }
@@ -167,11 +204,16 @@ export async function findUserByEmailAsync(
 ): Promise<SegurancaUser | undefined> {
   const cleanEmail = email.trim().toLowerCase();
 
-  // 1. Tenta buscar no cache local primeiro
+  // 1. Re-carrega dados locais atualizados de imediato
+  if (typeof window !== "undefined") {
+    data = loadLocal();
+  }
+
+  // 2. Tenta buscar no cache local
   const localFound = findUserByEmail(cleanEmail);
   if (localFound) return localFound;
 
-  // 2. Se não encontrou localmente, busca no Supabase
+  // 3. Se não encontrou localmente, busca no Supabase
   try {
     const fromDb = await fetchUsuarioByEmailDb(cleanEmail);
     if (fromDb) {
@@ -183,18 +225,19 @@ export async function findUserByEmailAsync(
     console.warn("[UsersStore] Erro ao buscar usuário no Supabase:", err);
   }
 
-  // 3. Tenta fazer sync completo do banco
+  // 4. Tenta fazer sync completo do banco
   await syncUsersFromSupabase();
 
   return findUserByEmail(cleanEmail);
 }
 
 export function emailExists(email: string, ignoreId?: string): boolean {
-  if (data.length === 0 && typeof window !== "undefined") {
+  if (typeof window !== "undefined") {
     data = loadLocal();
   }
+  const cleanEmail = email.trim().toLowerCase();
   return data.some(
-    (u) => u.email.toLowerCase() === email.toLowerCase() && u.id !== ignoreId,
+    (u) => u.email.toLowerCase() === cleanEmail && u.id !== ignoreId,
   );
 }
 
