@@ -6,6 +6,8 @@
 
 import { supabase } from "./supabase";
 import type { Aluno, Ocorrencia, OcorrenciaMensagem } from "./mock-data";
+import type { PerfilId } from "./auth";
+import type { SegurancaUser } from "./users-store";
 
 // ─── Mapeamento de campos (snake_case do banco ↔ camelCase do front) ──────────
 
@@ -212,3 +214,121 @@ export async function insertMensagem(
 
   return mapMensagem(data as Record<string, unknown>);
 }
+
+// ─── USUÁRIOS ────────────────────────────────────────────────────────────────
+
+export async function fetchUsuarios(): Promise<SegurancaUser[]> {
+  try {
+    const { data, error } = await supabase
+      .from("usuarios")
+      .select("*")
+      .order("criado_em", { ascending: false });
+
+    if (error) {
+      console.error("[Supabase] fetchUsuarios:", error.message);
+      return [];
+    }
+
+    return (data ?? []).map((row: Record<string, unknown>) => ({
+      id: String(row.id ?? ""),
+      nome: String(row.nome ?? ""),
+      email: String(row.email ?? "").trim().toLowerCase(),
+      senha: String(row.senha ?? ""),
+      perfilId: (row.perfil_id as PerfilId) ?? "seguranca",
+      criadoEm: String(row.criado_em ?? new Date().toISOString()),
+    }));
+  } catch (err) {
+    console.error("[Supabase] fetchUsuarios crash:", err);
+    return [];
+  }
+}
+
+export async function fetchUsuarioByEmailDb(
+  email: string,
+): Promise<SegurancaUser | null> {
+  try {
+    const cleanEmail = email.trim().toLowerCase();
+    const { data, error } = await supabase
+      .from("usuarios")
+      .select("*")
+      .ilike("email", cleanEmail)
+      .maybeSingle();
+
+    if (error) {
+      console.error("[Supabase] fetchUsuarioByEmailDb error:", error.message);
+      return null;
+    }
+
+    if (!data) return null;
+
+    return {
+      id: String(data.id ?? ""),
+      nome: String(data.nome ?? ""),
+      email: String(data.email ?? "").trim().toLowerCase(),
+      senha: String(data.senha ?? ""),
+      perfilId: (data.perfil_id as PerfilId) ?? "seguranca",
+      criadoEm: String(data.criado_em ?? new Date().toISOString()),
+    };
+  } catch (err) {
+    console.error("[Supabase] fetchUsuarioByEmailDb crash:", err);
+    return null;
+  }
+}
+
+export async function insertUsuario(
+  u: Omit<SegurancaUser, "id" | "criadoEm"> & { id?: string },
+): Promise<SegurancaUser> {
+  const row = {
+    id: u.id || `u${Date.now().toString(36)}`,
+    nome: u.nome.trim(),
+    email: u.email.trim().toLowerCase(),
+    senha: u.senha,
+    perfil_id: u.perfilId,
+  };
+
+  const { data, error } = await supabase
+    .from("usuarios")
+    .insert(row)
+    .select()
+    .single();
+
+  if (error) {
+    console.error("[Supabase] insertUsuario error:", error.message, error.details);
+    throw new Error(error.message || "Erro ao cadastrar usuário no Supabase.");
+  }
+
+  return {
+    id: String(data.id),
+    nome: String(data.nome),
+    email: String(data.email).trim().toLowerCase(),
+    senha: String(data.senha),
+    perfilId: (data.perfil_id as PerfilId) ?? "seguranca",
+    criadoEm: String(data.criado_em ?? new Date().toISOString()),
+  };
+}
+
+export async function updateUsuarioDb(
+  id: string,
+  patch: Partial<Omit<SegurancaUser, "id" | "criadoEm">>,
+): Promise<void> {
+  const row: Record<string, unknown> = {};
+  if (patch.nome !== undefined) row.nome = patch.nome.trim();
+  if (patch.email !== undefined) row.email = patch.email.trim().toLowerCase();
+  if (patch.senha !== undefined) row.senha = patch.senha;
+  if (patch.perfilId !== undefined) row.perfil_id = patch.perfilId;
+
+  const { error } = await supabase.from("usuarios").update(row).eq("id", id);
+  if (error) {
+    console.error("[Supabase] updateUsuario error:", error.message);
+    throw new Error(error.message || "Erro ao atualizar usuário no Supabase.");
+  }
+}
+
+export async function deleteUsuarioDb(id: string): Promise<void> {
+  const { error } = await supabase.from("usuarios").delete().eq("id", id);
+  if (error) {
+    console.error("[Supabase] deleteUsuario error:", error.message);
+    throw new Error(error.message || "Erro ao excluir usuário no Supabase.");
+  }
+}
+

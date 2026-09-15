@@ -43,10 +43,21 @@ CREATE TABLE IF NOT EXISTS public.ocorrencia_mensagens (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
+-- 4. Tabela de Usuários (Contas do Sistema)
+CREATE TABLE IF NOT EXISTS public.usuarios (
+    id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    nome TEXT NOT NULL,
+    email TEXT UNIQUE NOT NULL,
+    senha TEXT NOT NULL,
+    perfil_id TEXT NOT NULL DEFAULT 'seguranca',
+    criado_em TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
 -- Ativar Row Level Security (RLS) nas tabelas
 ALTER TABLE public.alunos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ocorrencias ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ocorrencia_mensagens ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.usuarios ENABLE ROW LEVEL SECURITY;
 
 -- Políticas de acesso público/leitura e escrita (Ajuste conforme regras de Auth do projeto)
 DROP POLICY IF EXISTS "Permitir leitura pública de alunos" ON public.alunos;
@@ -79,6 +90,18 @@ CREATE POLICY "Permitir atualização de mensagens" ON public.ocorrencia_mensage
 DROP POLICY IF EXISTS "Permitir exclusão de mensagens" ON public.ocorrencia_mensagens;
 CREATE POLICY "Permitir exclusão de mensagens" ON public.ocorrencia_mensagens FOR DELETE USING (true);
 
+DROP POLICY IF EXISTS "Permitir leitura pública de usuarios" ON public.usuarios;
+CREATE POLICY "Permitir leitura pública de usuarios" ON public.usuarios FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Permitir inserção de usuarios" ON public.usuarios;
+CREATE POLICY "Permitir inserção de usuarios" ON public.usuarios FOR INSERT WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Permitir atualização de usuarios" ON public.usuarios;
+CREATE POLICY "Permitir atualização de usuarios" ON public.usuarios FOR UPDATE USING (true);
+
+DROP POLICY IF EXISTS "Permitir exclusão de usuarios" ON public.usuarios;
+CREATE POLICY "Permitir exclusão de usuarios" ON public.usuarios FOR DELETE USING (true);
+
 -- Dados Iniciais (Seeds) de Alunos
 INSERT INTO public.alunos (id, nome, turma, sala, matricula, data_nascimento, responsavel, telefone_responsavel, email) VALUES
 ('a1', 'Pedro Henrique Almeida', '9º A', '201', '2024-0312', '2010-03-15', 'Carla Almeida', '(21) 98888-0001', 'pedro.almeida@aluno.santoinacio-rio.com.br'),
@@ -97,3 +120,8 @@ INSERT INTO public.ocorrencias (id, aluno_id, aluno_nome, turma, tipo, subtipo, 
 ('o2', 'a3', 'Lucas Martins Ribeiro', '1º EM A', 'Agressão', 'Física', '2026-04-21T14:30:00Z', 'Pátio', 'Envolveu-se em briga com colega durante o intervalo. Necessitou intervenção da coordenação.', 'grave', 'Coord. Roberto Lima'),
 ('o3', 'a2', 'Ana Beatriz Souza', '8º B', 'Atraso recorrente', NULL, '2026-04-20T07:45:00Z', 'Portaria', 'Quinto atraso no mês. Já houve comunicação com responsáveis.', 'media', 'Profº André Castro')
 ON CONFLICT (id) DO NOTHING;
+
+-- Dados Iniciais (Seeds) de Usuários
+INSERT INTO public.usuarios (id, nome, email, senha, perfil_id) VALUES
+('u_luciano', 'Luciano', 'luciano@gmail.com', '123456', 'seguranca')
+ON CONFLICT (email) DO NOTHING;

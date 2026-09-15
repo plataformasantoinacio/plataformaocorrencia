@@ -8,9 +8,8 @@ import { Building2, ShieldCheck } from "lucide-react";
 import logo from "@/assets/logotipo.webp";
 import { Footer } from "@/components/Footer";
 import { saveCurrentUser, type PerfilId } from "@/lib/auth";
-import { findUserByEmail } from "@/lib/users-store";
+import { findUserByEmailAsync } from "@/lib/users-store";
 import { toast } from "sonner";
-
 
 export const Route = createFileRoute("/")({
   component: LoginPage,
@@ -25,76 +24,90 @@ function LoginPage() {
   const [perfil, setPerfil] = useState<PerfilId>("seguranca");
   const [usuario, setUsuario] = useState("");
   const [senha, setSenha] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const login = usuario.trim();
+    if (!login) return toast.error("Informe o e-mail.");
+    if (!senha) return toast.error("Informe a senha.");
 
-    if (perfil === "direcao") {
-      // 1) Credencial fixa da Direção principal
-      if (
-        login.toLowerCase() === DIRECAO_EMAIL.toLowerCase() &&
-        senha === DIRECAO_SENHA
-      ) {
-        saveCurrentUser({
-          nome: "Jonathan",
-          perfil: "Direção",
-          perfilId: "direcao",
-        });
-        toast.success("Login realizado com sucesso como Direção!");
-        navigate({ to: "/dashboard" });
-        return;
-      }
-
-      // 2) Usuários cadastrados da Direção
-      const found = findUserByEmail(login);
-      if (found) {
-        if (found.senha !== senha) {
-          return toast.error("Senha incorreta.");
+    setLoading(true);
+    try {
+      if (perfil === "direcao") {
+        // 1) Credencial fixa da Direção principal
+        if (
+          login.toLowerCase() === DIRECAO_EMAIL.toLowerCase() &&
+          senha === DIRECAO_SENHA
+        ) {
+          saveCurrentUser({
+            nome: "Jonathan",
+            perfil: "Direção",
+            perfilId: "direcao",
+          });
+          toast.success("Login realizado com sucesso como Direção!");
+          navigate({ to: "/dashboard" });
+          return;
         }
-        if (found.perfilId !== "direcao") {
-          return toast.error("Este e-mail pertence ao perfil Segurança. Selecione a aba 'Segurança' para entrar.");
-        }
-        saveCurrentUser({
-          nome: found.nome,
-          perfil: "Direção",
-          perfilId: "direcao",
-        });
-        toast.success("Login realizado com sucesso como Direção!");
-        navigate({ to: "/dashboard" });
-        return;
-      }
 
-      return toast.error("Credenciais inválidas para o perfil Direção.");
-    } else {
-      // Perfil Segurança selecionado
-      if (
-        login.toLowerCase() === DIRECAO_EMAIL.toLowerCase() &&
-        senha === DIRECAO_SENHA
-      ) {
-        return toast.error("Este e-mail pertence ao perfil Direção. Selecione a aba 'Direção' para entrar.");
-      }
-
-      // Usuários cadastrados do perfil Segurança
-      const found = findUserByEmail(login);
-      if (found) {
-        if (found.senha !== senha) {
-          return toast.error("Senha incorreta.");
+        // 2) Usuários cadastrados da Direção
+        const found = await findUserByEmailAsync(login);
+        if (found) {
+          if (found.senha !== senha) {
+            return toast.error("Senha incorreta.");
+          }
+          if (found.perfilId !== "direcao") {
+            return toast.error(
+              "Este e-mail pertence ao perfil Segurança. Selecione a aba 'Segurança' para entrar.",
+            );
+          }
+          saveCurrentUser({
+            nome: found.nome,
+            perfil: "Direção",
+            perfilId: "direcao",
+          });
+          toast.success("Login realizado com sucesso como Direção!");
+          navigate({ to: "/dashboard" });
+          return;
         }
-        if (found.perfilId !== "seguranca") {
-          return toast.error("Este e-mail pertence ao perfil Direção. Selecione a aba 'Direção' para entrar.");
-        }
-        saveCurrentUser({
-          nome: found.nome,
-          perfil: "Segurança",
-          perfilId: "seguranca",
-        });
-        toast.success("Login realizado com sucesso como Segurança!");
-        navigate({ to: "/registrar" });
-        return;
-      }
 
-      return toast.error("Credenciais inválidas para o perfil Segurança.");
+        return toast.error("Credenciais inválidas para o perfil Direção.");
+      } else {
+        // Perfil Segurança selecionado
+        if (
+          login.toLowerCase() === DIRECAO_EMAIL.toLowerCase() &&
+          senha === DIRECAO_SENHA
+        ) {
+          return toast.error(
+            "Este e-mail pertence ao perfil Direção. Selecione a aba 'Direção' para entrar.",
+          );
+        }
+
+        // Usuários cadastrados do perfil Segurança
+        const found = await findUserByEmailAsync(login);
+        if (found) {
+          if (found.senha !== senha) {
+            return toast.error("Senha incorreta.");
+          }
+          if (found.perfilId !== "seguranca") {
+            return toast.error(
+              "Este e-mail pertence ao perfil Direção. Selecione a aba 'Direção' para entrar.",
+            );
+          }
+          saveCurrentUser({
+            nome: found.nome,
+            perfil: "Segurança",
+            perfilId: "seguranca",
+          });
+          toast.success("Login realizado com sucesso como Segurança!");
+          navigate({ to: "/registrar" });
+          return;
+        }
+
+        return toast.error("Credenciais inválidas para o perfil Segurança.");
+      }
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -224,8 +237,8 @@ function LoginPage() {
                     className="h-11"
                   />
                 </div>
-                <Button type="submit" className="mt-2 h-12 w-full text-sm font-semibold" size="lg">
-                  Entrar
+                <Button type="submit" disabled={loading} className="mt-2 h-12 w-full text-sm font-semibold" size="lg">
+                  {loading ? "Entrando..." : "Entrar"}
                 </Button>
                 <p className="pt-2 text-center text-[11px] text-muted-foreground">
                   {perfil === "direcao"

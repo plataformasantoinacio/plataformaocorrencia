@@ -1,5 +1,13 @@
 import { useState, useEffect } from "react";
 import type { PerfilId } from "@/lib/auth";
+import { supabase } from "./supabase";
+import {
+  fetchUsuarios,
+  fetchUsuarioByEmailDb,
+  insertUsuario,
+  updateUsuarioDb,
+  deleteUsuarioDb,
+} from "./supabase-service";
 
 export type SegurancaUser = {
   id: string;
@@ -10,10 +18,9 @@ export type SegurancaUser = {
   criadoEm: string;
 };
 
-
 const KEY = "csi_users";
 
-function load(): SegurancaUser[] {
+function loadLocal(): SegurancaUser[] {
   if (typeof window === "undefined") return [];
   try {
     const raw = localStorage.getItem(KEY);
@@ -22,7 +29,7 @@ function load(): SegurancaUser[] {
     return arr.map((u) => ({
       id: u.id ?? `u${Date.now().toString(36)}`,
       nome: u.nome ?? "",
-      email: u.email ?? "",
+      email: (u.email ?? "").trim().toLowerCase(),
       senha: u.senha ?? "",
       perfilId: (u.perfilId ?? "seguranca") as PerfilId,
       criadoEm: u.criadoEm ?? new Date().toISOString(),
@@ -32,11 +39,10 @@ function load(): SegurancaUser[] {
   }
 }
 
-
-let data: SegurancaUser[] = load();
+let data: SegurancaUser[] = loadLocal();
 const listeners = new Set<() => void>();
 
-function persist() {
+function persistLocal() {
   try {
     localStorage.setItem(KEY, JSON.stringify(data));
   } catch {
@@ -45,38 +51,144 @@ function persist() {
   listeners.forEach((l) => l());
 }
 
-export function addUser(u: Omit<SegurancaUser, "id" | "criadoEm">): SegurancaUser {
+// ─── Subscrição Realtime e Sync com Supabase ────────────────────────────────
+
+export async function syncUsersFromSupabase(): Promise<SegurancaUser[]> {
+  try {
+    const remote = await fetchUsuarios();
+    if (remote) {
+      const map = new Map<string, SegurancaUser>();
+      // Insere os de localStorage
+      data.forEach((u) => map.set(u.email.toLowerCase(), u));
+      // Sobrescreve/adiciona os do Supabase
+      remote.forEach((u) => map.set(u.email.toLowerCase(), u));
+
+      data = Array.from(map.values());
+      persistLocal();
+    }
+  } catch (err) {
+    console.error("[UsersStore] syncUsersFromSupabase error:", err);
+  }
+  return data;
+}
+
+if (typeof window !== "undefined") {
+  // Inicia busca inicial no Supabase
+  void syncUsersFromSupabase();
+
+  // Escuta alterações em tempo real na tabela 'usuarios'
+  supabase
+    .channel("usuarios-realtime-global")
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "usuarios" },
+      () => {
+        void syncUsersFromSupabase();
+      },
+    )
+    .subscribe();
+}
+
+// ─── Operações de Usuários ──────────────────────────────────────────────────
+
+export async function addUser(
+  u: Omit<SegurancaUser, "id" | "criadoEm">,
+): Promise<SegurancaUser> {
+  const cleanEmail = u.email.trim().toLowerCase();
+  const tempId = `u${Date.now().toString(36)}`;
   const novo: SegurancaUser = {
     ...u,
-    id: `u${Date.now().toString(36)}`,
+    email: cleanEmail,
+    id: tempId,
     criadoEm: new Date().toISOString(),
   };
-  data = [novo, ...data];
-  persist();
-  return novo;
+
+  // Tenta salvar no Supabase
+  try {
+    const created = await insertUsuario({
+      nome: u.nome.trim(),
+      email: cleanEmail,
+      senha: u.senha,
+      perfilId: u.perfilId,
+    });
+
+    data = [created, ...data.filter((x) => x.email.toLowerCase() !== cleanEmail)];
+    persistLocal();
+    return created;
+  } catch (err: unknown) {
+    console.error("[UsersStore] Erro ao salvar usuário no Supabase:", err);
+    // Se o banco Supabase falhar, lança o erro explicitamente para a UI alertar
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(msg || "Falha ao salvar no banco Supabase.");
+  }
 }
 
-export function updateUser(id: string, patch: Partial<Omit<SegurancaUser, "id" | "criadoEm">>) {
-  data = data.map((u) => (u.id === id ? { ...u, ...patch } : u));
-  persist();
+export async function updateUser(
+  id: string,
+  patch: Partial<Omit<SegurancaUser, "id" | "criadoEm">>,
+): Promise<void> {
+  const cleanPatch = {
+    ...patch,
+    ...(patch.email ? { email: patch.email.trim().toLowerCase() } : {}),
+  };
+  data = data.map((u) => (u.id === id ? { ...u, ...cleanPatch } : u));
+  persistLocal();
+
+  try {
+    await updateUsuarioDb(id, cleanPatch);
+  } catch (err) {
+    console.error("[UsersStore] Erro ao atualizar usuário no Supabase:", err);
+    throw err;
+  }
 }
 
-export function deleteUser(id: string) {
+export async function deleteUser(id: string): Promise<void> {
   data = data.filter((u) => u.id !== id);
-  persist();
+  persistLocal();
+
+  try {
+    await deleteUsuarioDb(id);
+  } catch (err) {
+    console.error("[UsersStore] Erro ao deletar usuário no Supabase:", err);
+    throw err;
+  }
 }
 
 export function findUserByEmail(email: string): SegurancaUser | undefined {
-  // Garantir carregamento inicial no cliente se data estiver vazio
+  const cleanEmail = email.trim().toLowerCase();
   if (data.length === 0 && typeof window !== "undefined") {
-    data = load();
+    data = loadLocal();
   }
-  return data.find((u) => u.email.toLowerCase() === email.toLowerCase());
+  return data.find((u) => u.email.toLowerCase() === cleanEmail);
+}
+
+export async function findUserByEmailAsync(
+  email: string,
+): Promise<SegurancaUser | undefined> {
+  const cleanEmail = email.trim().toLowerCase();
+
+  // 1. Tenta buscar diretamente do Supabase via API
+  try {
+    const fromDb = await fetchUsuarioByEmailDb(cleanEmail);
+    if (fromDb) {
+      data = [fromDb, ...data.filter((u) => u.email.toLowerCase() !== cleanEmail)];
+      persistLocal();
+      return fromDb;
+    }
+  } catch (err) {
+    console.error("[UsersStore] Erro ao buscar usuário diretamente do Supabase:", err);
+  }
+
+  // 2. Tenta fazer sync completo do banco
+  await syncUsersFromSupabase();
+
+  // 3. Retorna do cache local
+  return findUserByEmail(cleanEmail);
 }
 
 export function emailExists(email: string, ignoreId?: string): boolean {
   if (data.length === 0 && typeof window !== "undefined") {
-    data = load();
+    data = loadLocal();
   }
   return data.some(
     (u) => u.email.toLowerCase() === email.toLowerCase() && u.id !== ignoreId,
@@ -84,12 +196,14 @@ export function emailExists(email: string, ignoreId?: string): boolean {
 }
 
 export function useUsers(): SegurancaUser[] {
-  const [users, setUsers] = useState<SegurancaUser[]>([]);
+  const [users, setUsers] = useState<SegurancaUser[]>(data);
 
   useEffect(() => {
-    setUsers(data);
-    const cb = () => setUsers(data);
+    setUsers([...data]);
+    const cb = () => setUsers([...data]);
     listeners.add(cb);
+    void syncUsersFromSupabase();
+
     return () => {
       listeners.delete(cb);
     };
@@ -97,3 +211,4 @@ export function useUsers(): SegurancaUser[] {
 
   return users;
 }
+

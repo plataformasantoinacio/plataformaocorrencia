@@ -163,9 +163,9 @@ function UsuariosPage() {
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={() => {
+              onClick={async () => {
                 if (excluir) {
-                  deleteUser(excluir.id);
+                  await deleteUser(excluir.id);
                   toast.success("Usuário excluído.");
                 }
                 setExcluir(null);
@@ -196,6 +196,7 @@ function UserFormDialog({
   const [senha, setSenha] = useState("");
   const [senhaConfirm, setSenhaConfirm] = useState("");
   const [perfilId, setPerfilId] = useState<SegurancaUser["perfilId"]>("seguranca");
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -205,10 +206,11 @@ function UserFormDialog({
       setSenha("");
       setSenhaConfirm("");
       setPerfilId(user?.perfilId ?? "seguranca");
+      setSubmitting(false);
     }
   }, [open, user]);
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     const n = nome.trim();
     const em = email.trim();
@@ -223,22 +225,41 @@ function UserFormDialog({
     if (emailExists(em, user?.id))
       return toast.error("Já existe um usuário com esse email.");
 
-    if (!isEdit) {
-      if (senha.length < 4) return toast.error("Senha deve ter ao menos 4 caracteres.");
-      if (senha !== senhaConfirm) return toast.error("As senhas não coincidem.");
-      addUser({ nome: n, email: em, senha, perfilId });
-      toast.success("Usuário criado.");
-    } else {
-      const patch: Partial<SegurancaUser> = { nome: n, email: em, perfilId };
-      if (senha || senhaConfirm) {
-        if (senha.length < 4) return toast.error("Senha deve ter ao menos 4 caracteres.");
-        if (senha !== senhaConfirm) return toast.error("As senhas não coincidem.");
-        patch.senha = senha;
+    setSubmitting(true);
+    try {
+      if (!isEdit) {
+        if (senha.length < 4) {
+          setSubmitting(false);
+          return toast.error("Senha deve ter ao menos 4 caracteres.");
+        }
+        if (senha !== senhaConfirm) {
+          setSubmitting(false);
+          return toast.error("As senhas não coincidem.");
+        }
+        await addUser({ nome: n, email: em, senha, perfilId });
+        toast.success("Conta criada com sucesso no Supabase!");
+      } else {
+        const patch: Partial<SegurancaUser> = { nome: n, email: em, perfilId };
+        if (senha || senhaConfirm) {
+          if (senha.length < 4) {
+            setSubmitting(false);
+            return toast.error("Senha deve ter ao menos 4 caracteres.");
+          }
+          if (senha !== senhaConfirm) {
+            setSubmitting(false);
+            return toast.error("As senhas não coincidem.");
+          }
+          patch.senha = senha;
+        }
+        await updateUser(user!.id, patch);
+        toast.success("Usuário atualizado com sucesso!");
       }
-      updateUser(user!.id, patch);
-      toast.success("Usuário atualizado.");
+      onOpenChange(false);
+    } catch (err) {
+      toast.error("Erro ao salvar conta no Supabase. Tente novamente.");
+    } finally {
+      setSubmitting(false);
     }
-    onOpenChange(false);
   };
 
   return (
@@ -275,7 +296,7 @@ function UserFormDialog({
 
           <div className="space-y-2">
             <Label htmlFor="u-nome">Nome</Label>
-            <Input id="u-nome" value={nome} onChange={(e) => setNome(e.target.value)} />
+            <Input id="u-nome" value={nome} onChange={(e) => setNome(e.target.value)} disabled={submitting} />
           </div>
           <div className="space-y-2">
             <Label htmlFor="u-email">Email</Label>
@@ -284,6 +305,7 @@ function UserFormDialog({
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              disabled={submitting}
             />
           </div>
           <div className="space-y-2">
@@ -293,6 +315,7 @@ function UserFormDialog({
               type="email"
               value={emailConfirm}
               onChange={(e) => setEmailConfirm(e.target.value)}
+              disabled={submitting}
             />
           </div>
           <div className="space-y-2">
@@ -305,6 +328,7 @@ function UserFormDialog({
               value={senha}
               onChange={(e) => setSenha(e.target.value)}
               placeholder={isEdit ? "Deixe em branco para manter" : ""}
+              disabled={submitting}
             />
           </div>
           <div className="space-y-2">
@@ -314,13 +338,16 @@ function UserFormDialog({
               type="password"
               value={senhaConfirm}
               onChange={(e) => setSenhaConfirm(e.target.value)}
+              disabled={submitting}
             />
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
               Cancelar
             </Button>
-            <Button type="submit">{isEdit ? "Salvar" : "Criar"}</Button>
+            <Button type="submit" disabled={submitting}>
+              {submitting ? "Salvando..." : isEdit ? "Salvar" : "Criar"}
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>
