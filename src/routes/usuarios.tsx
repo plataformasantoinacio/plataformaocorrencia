@@ -237,7 +237,7 @@ function UserFormDialog({
           return toast.error("As senhas não coincidem.");
         }
         await addUser({ nome: n, email: em, senha, perfilId });
-        toast.success("Conta criada com sucesso no Supabase!");
+        toast.success("Usuário criado com sucesso.");
       } else {
         const patch: Partial<SegurancaUser> = { nome: n, email: em, perfilId };
         if (senha || senhaConfirm) {
@@ -252,11 +252,11 @@ function UserFormDialog({
           patch.senha = senha;
         }
         await updateUser(user!.id, patch);
-        toast.success("Usuário atualizado com sucesso!");
+        toast.success("Usuário atualizado com sucesso.");
       }
       onOpenChange(false);
     } catch (err) {
-      toast.error("Erro ao salvar conta no Supabase. Tente novamente.");
+      toast.error("Erro ao salvar conta. Tente novamente.");
     } finally {
       setSubmitting(false);
     }

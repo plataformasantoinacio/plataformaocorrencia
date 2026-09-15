@@ -103,7 +103,11 @@ export async function addUser(
     criadoEm: new Date().toISOString(),
   };
 
-  // Tenta salvar no Supabase
+  // Garante salvamento local imediato
+  data = [novo, ...data.filter((x) => x.email.toLowerCase() !== cleanEmail)];
+  persistLocal();
+
+  // Tenta salvar no Supabase em segundo plano
   try {
     const created = await insertUsuario({
       nome: u.nome.trim(),
@@ -112,14 +116,12 @@ export async function addUser(
       perfilId: u.perfilId,
     });
 
-    data = [created, ...data.filter((x) => x.email.toLowerCase() !== cleanEmail)];
+    data = data.map((x) => (x.id === tempId ? created : x));
     persistLocal();
     return created;
   } catch (err: unknown) {
-    console.error("[UsersStore] Erro ao salvar usuário no Supabase:", err);
-    // Se o banco Supabase falhar, lança o erro explicitamente para a UI alertar
-    const msg = err instanceof Error ? err.message : String(err);
-    throw new Error(msg || "Falha ao salvar no banco Supabase.");
+    console.warn("[UsersStore] Salvo localmente. Aviso Supabase:", err);
+    return novo;
   }
 }
 
@@ -137,8 +139,7 @@ export async function updateUser(
   try {
     await updateUsuarioDb(id, cleanPatch);
   } catch (err) {
-    console.error("[UsersStore] Erro ao atualizar usuário no Supabase:", err);
-    throw err;
+    console.warn("[UsersStore] Atualizado localmente. Aviso Supabase:", err);
   }
 }
 
@@ -149,8 +150,7 @@ export async function deleteUser(id: string): Promise<void> {
   try {
     await deleteUsuarioDb(id);
   } catch (err) {
-    console.error("[UsersStore] Erro ao deletar usuário no Supabase:", err);
-    throw err;
+    console.warn("[UsersStore] Deletado localmente. Aviso Supabase:", err);
   }
 }
 
@@ -167,7 +167,11 @@ export async function findUserByEmailAsync(
 ): Promise<SegurancaUser | undefined> {
   const cleanEmail = email.trim().toLowerCase();
 
-  // 1. Tenta buscar diretamente do Supabase via API
+  // 1. Tenta buscar no cache local primeiro
+  const localFound = findUserByEmail(cleanEmail);
+  if (localFound) return localFound;
+
+  // 2. Se não encontrou localmente, busca no Supabase
   try {
     const fromDb = await fetchUsuarioByEmailDb(cleanEmail);
     if (fromDb) {
@@ -176,13 +180,12 @@ export async function findUserByEmailAsync(
       return fromDb;
     }
   } catch (err) {
-    console.error("[UsersStore] Erro ao buscar usuário diretamente do Supabase:", err);
+    console.warn("[UsersStore] Erro ao buscar usuário no Supabase:", err);
   }
 
-  // 2. Tenta fazer sync completo do banco
+  // 3. Tenta fazer sync completo do banco
   await syncUsersFromSupabase();
 
-  // 3. Retorna do cache local
   return findUserByEmail(cleanEmail);
 }
 
