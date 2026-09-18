@@ -36,16 +36,12 @@ function loadLocalOcorrencias(): Ocorrencia[] {
       return defaultOcorrencias;
     }
     const parsed = JSON.parse(raw) as Ocorrencia[];
-    if (!Array.isArray(parsed) || parsed.length === 0) {
+    if (!Array.isArray(parsed)) {
       localStorage.setItem(LOCAL_KEY, JSON.stringify(defaultOcorrencias));
       return defaultOcorrencias;
     }
 
-    const map = new Map<string, Ocorrencia>();
-    defaultOcorrencias.forEach((o) => map.set(o.id, o));
-    parsed.forEach((o) => map.set(o.id, o));
-
-    return Array.from(map.values());
+    return parsed;
   } catch {
     return defaultOcorrencias;
   }
