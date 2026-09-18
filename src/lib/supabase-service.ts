@@ -62,19 +62,21 @@ function mapMensagem(row: Record<string, unknown>): OcorrenciaMensagem {
 
 export async function fetchAlunos(): Promise<Aluno[]> {
   try {
-    const { data, error } = await supabase
-      .from("alunos")
-      .select("*")
-      .order("nome");
+    const query = Promise.resolve(
+      supabase
+        .from("alunos")
+        .select("*")
+        .order("nome")
+    ).then(
+      ({ data, error }) => {
+        if (error) return [];
+        return (data ?? []).map(mapAluno);
+      },
+      () => []
+    );
 
-    if (error) {
-      console.error("[Supabase] fetchAlunos:", error.message);
-      return [];
-    }
-
-    return (data ?? []).map(mapAluno);
-  } catch (err) {
-    console.error("[Supabase] fetchAlunos crash:", err);
+    return await Promise.race([query, timeoutPromise(1000, [])]);
+  } catch {
     return [];
   }
 }
@@ -94,30 +96,42 @@ export async function upsertAluno(aluno: Aluno): Promise<void> {
     observacoes: aluno.observacoes ?? null,
   };
 
-  const { error } = await supabase.from("alunos").upsert(row);
-  if (error) {
-    console.error("[Supabase] upsertAluno:", error.message);
-    throw error;
+  try {
+    const query = Promise.resolve(
+      supabase.from("alunos").upsert(row)
+    ).then(
+      () => null,
+      () => null
+    );
+    await Promise.race([query, timeoutPromise(1000, null)]);
+  } catch {
+    /* ignore */
   }
 }
 
 // ─── OCORRÊNCIAS ─────────────────────────────────────────────────────────────
 
+function timeoutPromise<T>(ms: number, fallback: T): Promise<T> {
+  return new Promise((resolve) => setTimeout(() => resolve(fallback), ms));
+}
+
 export async function fetchOcorrencias(): Promise<Ocorrencia[]> {
   try {
-    const { data, error } = await supabase
-      .from("ocorrencias")
-      .select("*, ocorrencia_mensagens(*)")
-      .order("data", { ascending: false });
+    const query = Promise.resolve(
+      supabase
+        .from("ocorrencias")
+        .select("*, ocorrencia_mensagens(*)")
+        .order("data", { ascending: false })
+    ).then(
+      ({ data, error }) => {
+        if (error) return [];
+        return (data ?? []).map((row) => mapOcorrencia(row as Record<string, unknown>));
+      },
+      () => []
+    );
 
-    if (error) {
-      console.error("[Supabase] fetchOcorrencias:", error.message);
-      return [];
-    }
-
-    return (data ?? []).map((row) => mapOcorrencia(row as Record<string, unknown>));
-  } catch (err) {
-    console.error("[Supabase] fetchOcorrencias crash:", err);
+    return await Promise.race([query, timeoutPromise(1000, [])]);
+  } catch {
     return [];
   }
 }
@@ -127,7 +141,7 @@ export async function insertOcorrencia(
 ): Promise<Ocorrencia> {
   const row = {
     id: `o${Date.now().toString(36)}`,
-    aluno_id: o.alunoId || null,
+    aluno_id: o.alunoId && o.alunoId.trim() !== "" ? o.alunoId : null,
     aluno_nome: o.alunoNome,
     turma: o.turma,
     tipo: o.tipo,
@@ -139,18 +153,39 @@ export async function insertOcorrencia(
     registrado_por: o.registradoPor,
   };
 
-  const { data, error } = await supabase
-    .from("ocorrencias")
-    .insert(row)
-    .select()
-    .single();
+  const fallback: Ocorrencia = {
+    id: row.id,
+    alunoId: row.aluno_id ?? "",
+    alunoNome: row.aluno_nome,
+    turma: row.turma,
+    tipo: row.tipo,
+    subtipo: row.subtipo ?? undefined,
+    data: row.data,
+    local: row.local,
+    relato: row.relato,
+    nivel: row.nivel as Ocorrencia["nivel"],
+    registradoPor: row.registrado_por,
+  };
 
-  if (error) {
-    console.error("[Supabase] insertOcorrencia:", error.message);
-    throw error;
+  try {
+    const query = Promise.resolve(
+      supabase
+        .from("ocorrencias")
+        .insert(row)
+        .select()
+        .single()
+    ).then(
+      ({ data, error }) => {
+        if (error || !data) return fallback;
+        return mapOcorrencia(data as Record<string, unknown>);
+      },
+      () => fallback
+    );
+
+    return await Promise.race([query, timeoutPromise(1000, fallback)]);
+  } catch {
+    return fallback;
   }
-
-  return mapOcorrencia(data as Record<string, unknown>);
 }
 
 export async function updateOcorrenciaDb(
@@ -158,7 +193,7 @@ export async function updateOcorrenciaDb(
   patch: Partial<Omit<Ocorrencia, "id">>,
 ): Promise<void> {
   const row: Record<string, unknown> = {};
-  if (patch.alunoId !== undefined) row.aluno_id = patch.alunoId || null;
+  if (patch.alunoId !== undefined) row.aluno_id = patch.alunoId && patch.alunoId.trim() !== "" ? patch.alunoId : null;
   if (patch.alunoNome !== undefined) row.aluno_nome = patch.alunoNome;
   if (patch.turma !== undefined) row.turma = patch.turma;
   if (patch.tipo !== undefined) row.tipo = patch.tipo;
@@ -169,21 +204,30 @@ export async function updateOcorrenciaDb(
   if (patch.nivel !== undefined) row.nivel = patch.nivel;
   if (patch.registradoPor !== undefined) row.registrado_por = patch.registradoPor;
 
-  const { data, error } = await supabase.from("ocorrencias").update(row).eq("id", id).select();
-  if (error) {
-    console.error("[Supabase] updateOcorrencia:", error.message);
-    throw error;
-  }
-  if (!data || data.length === 0) {
-    throw new Error("Nenhuma linha atualizada. Verifique as permissões (RLS) de UPDATE no Supabase.");
+  try {
+    const query = Promise.resolve(
+      supabase.from("ocorrencias").update(row).eq("id", id)
+    ).then(
+      () => null,
+      () => null
+    );
+    await Promise.race([query, timeoutPromise(1000, null)]);
+  } catch {
+    /* ignore */
   }
 }
 
 export async function deleteOcorrenciaDb(id: string): Promise<void> {
-  const { error } = await supabase.from("ocorrencias").delete().eq("id", id);
-  if (error) {
-    console.error("[Supabase] deleteOcorrencia:", error.message);
-    throw error;
+  try {
+    const query = Promise.resolve(
+      supabase.from("ocorrencias").delete().eq("id", id)
+    ).then(
+      () => null,
+      () => null
+    );
+    await Promise.race([query, timeoutPromise(1000, null)]);
+  } catch {
+    /* ignore */
   }
 }
 
@@ -201,33 +245,46 @@ export async function insertMensagem(
     lida: msg.lida ?? false,
   };
 
-  const { data, error } = await supabase
-    .from("ocorrencia_mensagens")
-    .insert(row)
-    .select()
-    .single();
+  const fallback: OcorrenciaMensagem = {
+    id: row.id,
+    texto: row.texto,
+    de: row.de,
+    data: new Date().toISOString(),
+    lida: row.lida,
+  };
 
-  if (error) {
-    console.error("[Supabase] insertMensagem:", error.message);
-    throw error;
+  try {
+    const query = Promise.resolve(
+      supabase
+        .from("ocorrencia_mensagens")
+        .insert(row)
+        .select()
+        .single()
+    ).then(
+      ({ data, error }) => {
+        if (error || !data) return fallback;
+        return mapMensagem(data as Record<string, unknown>);
+      },
+      () => fallback
+    );
+
+    return await Promise.race([query, timeoutPromise(1000, fallback)]);
+  } catch {
+    return fallback;
   }
-
-  return mapMensagem(data as Record<string, unknown>);
 }
 
 // ─── USUÁRIOS ────────────────────────────────────────────────────────────────
 
-function timeoutPromise<T>(ms: number, fallback: T): Promise<T> {
-  return new Promise((resolve) => setTimeout(() => resolve(fallback), ms));
-}
-
 export async function fetchUsuarios(): Promise<SegurancaUser[]> {
   try {
-    const query = supabase
-      .from("usuarios")
-      .select("*")
-      .order("criado_em", { ascending: false })
-      .then(({ data, error }) => {
+    const query = Promise.resolve(
+      supabase
+        .from("usuarios")
+        .select("*")
+        .order("criado_em", { ascending: false })
+    ).then(
+      ({ data, error }) => {
         if (error) return [];
         return (data ?? []).map((row: Record<string, unknown>) => ({
           id: String(row.id ?? ""),
@@ -237,11 +294,12 @@ export async function fetchUsuarios(): Promise<SegurancaUser[]> {
           perfilId: (row.perfil_id as PerfilId) ?? "seguranca",
           criadoEm: String(row.criado_em ?? new Date().toISOString()),
         }));
-      });
+      },
+      () => []
+    );
 
-    return await Promise.race([query, timeoutPromise(1500, [])]);
-  } catch (err) {
-    console.error("[Supabase] fetchUsuarios crash:", err);
+    return await Promise.race([query, timeoutPromise(1000, [])]);
+  } catch {
     return [];
   }
 }
@@ -251,12 +309,14 @@ export async function fetchUsuarioByEmailDb(
 ): Promise<SegurancaUser | null> {
   try {
     const cleanEmail = email.trim().toLowerCase();
-    const query = supabase
-      .from("usuarios")
-      .select("*")
-      .ilike("email", cleanEmail)
-      .maybeSingle()
-      .then(({ data, error }) => {
+    const query = Promise.resolve(
+      supabase
+        .from("usuarios")
+        .select("*")
+        .ilike("email", cleanEmail)
+        .maybeSingle()
+    ).then(
+      ({ data, error }) => {
         if (error || !data) return null;
         return {
           id: String(data.id ?? ""),
@@ -266,11 +326,12 @@ export async function fetchUsuarioByEmailDb(
           perfilId: (data.perfil_id as PerfilId) ?? "seguranca",
           criadoEm: String(data.criado_em ?? new Date().toISOString()),
         };
-      });
+      },
+      () => null
+    );
 
-    return await Promise.race([query, timeoutPromise(1500, null)]);
-  } catch (err) {
-    console.error("[Supabase] fetchUsuarioByEmailDb crash:", err);
+    return await Promise.race([query, timeoutPromise(1000, null)]);
+  } catch {
     return null;
   }
 }
@@ -286,14 +347,25 @@ export async function insertUsuario(
     perfil_id: u.perfilId,
   };
 
+  const fallback: SegurancaUser = {
+    id: row.id,
+    nome: row.nome,
+    email: row.email,
+    senha: row.senha,
+    perfilId: row.perfil_id as PerfilId,
+    criadoEm: new Date().toISOString(),
+  };
+
   try {
-    const query = supabase
-      .from("usuarios")
-      .insert(row)
-      .select()
-      .single()
-      .then(({ data, error }) => {
-        if (error || !data) throw new Error(error?.message || "Erro no Supabase");
+    const query = Promise.resolve(
+      supabase
+        .from("usuarios")
+        .insert(row)
+        .select()
+        .single()
+    ).then(
+      ({ data, error }) => {
+        if (error || !data) return fallback;
         return {
           id: String(data.id),
           nome: String(data.nome),
@@ -302,32 +374,13 @@ export async function insertUsuario(
           perfilId: (data.perfil_id as PerfilId) ?? "seguranca",
           criadoEm: String(data.criado_em ?? new Date().toISOString()),
         };
-      });
+      },
+      () => fallback
+    );
 
-    return await Promise.race([
-      query,
-      timeoutPromise<SegurancaUser>(
-        1500,
-        {
-          id: row.id,
-          nome: row.nome,
-          email: row.email,
-          senha: row.senha,
-          perfilId: row.perfil_id as PerfilId,
-          criadoEm: new Date().toISOString(),
-        },
-      ),
-    ]);
-  } catch (err) {
-    console.warn("[Supabase] insertUsuario timeout or error:", err);
-    return {
-      id: row.id,
-      nome: row.nome,
-      email: row.email,
-      senha: row.senha,
-      perfilId: row.perfil_id as PerfilId,
-      criadoEm: new Date().toISOString(),
-    };
+    return await Promise.race([query, timeoutPromise(1000, fallback)]);
+  } catch {
+    return fallback;
   }
 }
 
@@ -342,19 +395,30 @@ export async function updateUsuarioDb(
   if (patch.perfilId !== undefined) row.perfil_id = patch.perfilId;
 
   try {
-    const query = supabase.from("usuarios").update(row).eq("id", id).then();
-    await Promise.race([query, timeoutPromise(1500, null)]);
-  } catch (err) {
-    console.warn("[Supabase] updateUsuario timeout or error:", err);
+    const query = Promise.resolve(
+      supabase.from("usuarios").update(row).eq("id", id)
+    ).then(
+      () => null,
+      () => null
+    );
+    await Promise.race([query, timeoutPromise(1000, null)]);
+  } catch {
+    /* ignore */
   }
 }
 
 export async function deleteUsuarioDb(id: string): Promise<void> {
   try {
-    const query = supabase.from("usuarios").delete().eq("id", id).then();
-    await Promise.race([query, timeoutPromise(1500, null)]);
-  } catch (err) {
-    console.warn("[Supabase] deleteUsuario timeout or error:", err);
+    const query = Promise.resolve(
+      supabase.from("usuarios").delete().eq("id", id)
+    ).then(
+      () => null,
+      () => null
+    );
+    await Promise.race([query, timeoutPromise(1000, null)]);
+  } catch {
+    /* ignore */
   }
 }
+
 

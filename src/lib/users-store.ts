@@ -135,13 +135,15 @@ if (typeof window !== "undefined") {
 
 // ─── Subscrição Realtime e Sync ─────────────────────────────────────────────
 
+// ─── Subscrição Realtime e Sync ─────────────────────────────────────────────
+
 export async function syncUsersFromSupabase(): Promise<SegurancaUser[]> {
   try {
     const cloudUsers = await fetchFromCloud();
     if (cloudUsers && cloudUsers.length > 0) {
       const map = new Map<string, SegurancaUser>();
-      data.forEach((u) => map.set(u.email.toLowerCase(), u));
-      cloudUsers.forEach((u) => map.set(u.email.toLowerCase(), u));
+      data.forEach((u) => u.email && map.set((u.email || "").toLowerCase(), u));
+      cloudUsers.forEach((u) => u.email && map.set((u.email || "").toLowerCase(), u));
       data = Array.from(map.values());
       try {
         localStorage.setItem(KEY, JSON.stringify(data));
@@ -154,8 +156,8 @@ export async function syncUsersFromSupabase(): Promise<SegurancaUser[]> {
     const remote = await fetchUsuarios();
     if (remote && remote.length > 0) {
       const map = new Map<string, SegurancaUser>();
-      data.forEach((u) => map.set(u.email.toLowerCase(), u));
-      remote.forEach((u) => map.set(u.email.toLowerCase(), u));
+      data.forEach((u) => u.email && map.set((u.email || "").toLowerCase(), u));
+      remote.forEach((u) => u.email && map.set((u.email || "").toLowerCase(), u));
       data = Array.from(map.values());
       persistLocal();
     }
@@ -194,7 +196,7 @@ export async function addUser(
     criadoEm: new Date().toISOString(),
   };
 
-  data = [novo, ...data.filter((x) => x.email.toLowerCase() !== cleanEmail)];
+  data = [novo, ...data.filter((x) => (x.email || "").toLowerCase() !== cleanEmail)];
   persistLocal();
 
   try {
@@ -253,7 +255,7 @@ export function findUserByEmail(email: string): SegurancaUser | undefined {
       data = fresh;
     }
   }
-  return data.find((u) => u.email.toLowerCase() === cleanEmail);
+  return data.find((u) => (u.email || "").toLowerCase() === cleanEmail);
 }
 
 export async function findUserByEmailAsync(
@@ -274,8 +276,8 @@ export async function findUserByEmailAsync(
   const cloudUsers = await fetchFromCloud();
   if (cloudUsers && cloudUsers.length > 0) {
     const map = new Map<string, SegurancaUser>();
-    data.forEach((u) => map.set(u.email.toLowerCase(), u));
-    cloudUsers.forEach((u) => map.set(u.email.toLowerCase(), u));
+    data.forEach((u) => u.email && map.set((u.email || "").toLowerCase(), u));
+    cloudUsers.forEach((u) => u.email && map.set((u.email || "").toLowerCase(), u));
     data = Array.from(map.values());
     try {
       localStorage.setItem(KEY, JSON.stringify(data));
@@ -284,7 +286,7 @@ export async function findUserByEmailAsync(
     }
     listeners.forEach((l) => l());
 
-    const foundInCloud = data.find((u) => u.email.toLowerCase() === cleanEmail);
+    const foundInCloud = data.find((u) => (u.email || "").toLowerCase() === cleanEmail);
     if (foundInCloud) return foundInCloud;
   }
 
@@ -292,7 +294,7 @@ export async function findUserByEmailAsync(
   try {
     const fromDb = await fetchUsuarioByEmailDb(cleanEmail);
     if (fromDb) {
-      data = [fromDb, ...data.filter((u) => u.email.toLowerCase() !== cleanEmail)];
+      data = [fromDb, ...data.filter((u) => (u.email || "").toLowerCase() !== cleanEmail)];
       persistLocal();
       return fromDb;
     }
@@ -309,7 +311,7 @@ export function emailExists(email: string, ignoreId?: string): boolean {
   }
   const cleanEmail = email.trim().toLowerCase();
   return data.some(
-    (u) => u.email.toLowerCase() === cleanEmail && u.id !== ignoreId,
+    (u) => (u.email || "").toLowerCase() === cleanEmail && u.id !== ignoreId,
   );
 }
 
